@@ -767,8 +767,13 @@
   <!-- STEP 2: DATA + FILES -->
   <div class="panel" id="panel-2">
     <div class="upload-section">
-      <div class="section-title">📄 Cargar CSV con destinatarios</div>
-      <div class="section-desc">CSV con columnas: nombre, email, teléfono, nombre_archivo, campos custom...</div>
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <div>
+          <div class="section-title">📄 Cargar CSV con destinatarios</div>
+          <div class="section-desc">La primera fila debe ser el encabezado. Columnas: nombre, email, teléfono, archivo, campos custom...</div>
+        </div>
+        <button class="btn btn-small btn-outline" onclick="downloadTemplate()">📥 Descargar plantilla CSV</button>
+      </div>
       <div class="drop-zone" id="csv-zone" onclick="document.getElementById('csv-input').click()">
         <div class="drop-icon">📋</div>
         <div class="drop-text">Arrastra tu CSV aquí o haz click para seleccionar</div>
@@ -933,10 +938,21 @@ function goToStep(step) {
 
 // === CSV HANDLING ===
 function parseCSV(text) {
+  // Remove BOM if present
+  text = text.replace(/^\ufeff/, '');
+  
   const sep = text.indexOf(';') !== -1 && text.indexOf(',') === -1 ? ';' : 
               text.split('\n')[0].split(';').length > text.split('\n')[0].split(',').length ? ';' : ',';
   const lines = text.trim().split('\n');
   const headers = lines[0].split(sep).map(h => h.trim().replace(/^["']|["']$/g, ''));
+  
+  // Validate first row looks like headers (should not contain @ which suggests email = data row)
+  const firstRowLooksLikeData = headers.some(h => h.includes('@') || /^\d{5,}$/.test(h));
+  if (firstRowLooksLikeData) {
+    alert('⚠️ La primera fila parece contener datos, no encabezados.\n\nLa primera fila del CSV debe ser el encabezado con los nombres de las columnas:\nnombre,email,telefono,archivo\n\nDescarga la plantilla para ver el formato correcto.');
+    return { headers: [], rows: [] };
+  }
+  
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
     if (!lines[i].trim()) continue;
@@ -952,6 +968,7 @@ function handleCSV(file) {
   const reader = new FileReader();
   reader.onload = (e) => {
     const result = parseCSV(e.target.result);
+    if (result.headers.length === 0) return; // Invalid CSV, alert already shown
     csvHeaders = result.headers;
     csvData = result.rows;
     showCSVPreview();
@@ -1312,6 +1329,27 @@ function exportLog() {
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// === TEMPLATE DOWNLOAD ===
+function downloadTemplate() {
+  const headers = ['nombre', 'email', 'telefono', 'archivo', 'crm_id', 'departamento'];
+  const sample = [
+    ['Juan García', 'juan.garcia@empresa.com', '34666111222', 'contrato_juan.pdf', 'CRM-001', 'Ventas'],
+    ['María López', 'maria.lopez@empresa.com', '34666333444', 'contrato_maria.pdf', 'CRM-002', 'RRHH'],
+    ['Carlos Ruiz', 'carlos.ruiz@empresa.com', '34666555666', 'contrato_carlos.pdf', 'CRM-003', 'IT'],
+  ];
+  
+  let csv = headers.join(',') + '\n';
+  sample.forEach(row => csv += row.join(',') + '\n');
+  
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'plantilla_bulk_signaturit.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 // === DRAG & DROP ===
 ['csv-zone', 'pdf-zone'].forEach(id => {
