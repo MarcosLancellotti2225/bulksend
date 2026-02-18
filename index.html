@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Signaturit Sender</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ===== LAUNCHER MODAL ===== -->
+<div class="launcher-overlay" id="launcherOverlay">
+  <div class="launcher">
+    <div class="launcher-header">
+      <div class="launcher-logo">S</div>
+      <h2>Signaturit Sender</h2>
+      <p>Selecciona el tipo de envío que deseas realizar</p>
+    </div>
+
+    <!-- Step 1: Request type -->
+    <div class="launcher-step active" id="launcherStep1">
+      <div class="launcher-label">Tipo de solicitud</div>
+      <div class="launcher-options">
+        <div class="launcher-option" data-type="advanced" onclick="selectOperationType(this)">
+          <div class="launcher-option-icon sig">✍️</div>
+          <div class="launcher-option-text">
+            <h4>Firma avanzada</h4>
+            <p>Firma biométrica o con certificado digital</p>
+          </div>
+        </div>
+        <div class="launcher-option" data-type="simple" onclick="selectOperationType(this)">
+          <div class="launcher-option-icon sig" style="background:rgba(0,180,182,0.08)">☑️</div>
+          <div class="launcher-option-text">
+            <h4>Firma simple</h4>
+            <p>Firma con un clic</p>
+          </div>
+        </div>
+        <div class="launcher-option" data-type="email" onclick="selectOperationType(this)">
+          <div class="launcher-option-icon email">📧</div>
+          <div class="launcher-option-text">
+            <h4>Email certificado</h4>
+            <p>Certifica tus comunicaciones</p>
+          </div>
+        </div>
+        <div class="launcher-option" data-type="sms" onclick="selectOperationType(this)">
+          <div class="launcher-option-icon sms">💬</div>
+          <div class="launcher-option-text">
+            <h4>SMS certificado</h4>
+            <p>Certifica tus mensajes SMS</p>
+          </div>
+        </div>
+        <div class="launcher-option" data-type="template" onclick="selectOperationType(this)">
+          <div class="launcher-option-icon bulk">📋</div>
+          <div class="launcher-option-text">
+            <h4>Templates</h4>
+            <p>Usar una plantilla predefinida</p>
+          </div>
+        </div>
+      </div>
+      <div class="launcher-actions">
+        <div class="launcher-dots">
+          <div class="launcher-dot active"></div>
+          <div class="launcher-dot"></div>
+        </div>
+        <button class="btn btn-primary" id="launcherNext1" disabled onclick="goLauncherStep(2)">Siguiente →</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Send mode -->
+    <div class="launcher-step" id="launcherStep2">
+      <div class="launcher-label">¿Cómo quieres enviar?</div>
+      <div class="launcher-options">
+        <div class="launcher-option" data-mode="individual" onclick="selectSendMode(this)">
+          <div class="launcher-option-icon single">👤</div>
+          <div class="launcher-option-text">
+            <h4>Envío individual</h4>
+            <p>Un destinatario, configura todo manualmente</p>
+          </div>
+        </div>
+        <div class="launcher-option" data-mode="bulk" onclick="selectSendMode(this)">
+          <div class="launcher-option-icon bulk">👥</div>
+          <div class="launcher-option-text">
+            <h4>Envío masivo</h4>
+            <p>Múltiples destinatarios desde CSV + PDFs</p>
+          </div>
+        </div>
+      </div>
+      <div class="launcher-actions">
+        <div class="launcher-dots">
+          <div class="launcher-dot"></div>
+          <div class="launcher-dot active"></div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary" onclick="goLauncherStep(1)">← Atrás</button>
+          <button class="btn btn-primary" id="launcherStart" disabled onclick="startApp()">Comenzar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== APP WRAPPER ===== -->
+<div class="app-wrapper" id="appWrapper">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo-icon">S</div>
+      <h1>Signaturit <span>Sender</span></h1>
+    </div>
+    <div class="header-badges">
+      <span class="header-badge mode-tag" id="badgeOperation">Firma</span>
+      <span class="header-badge" id="badgeMode">Masivo</span>
+      <button class="btn-change-mode" onclick="resetLauncher()">Cambiar</button>
+    </div>
+  </header>
+
+  <!-- ==================== INDIVIDUAL MODE ==================== -->
+  <div id="individualMode" style="display:none">
+    <div class="main">
+      <h2 class="section-title" id="individualTitle">Envío individual</h2>
+      <p class="section-desc">Completa los datos y adjunta el documento</p>
+
+      <div class="config-grid">
+        <div class="config-card">
+          <label>Entorno <span class="req">*</span></label>
+          <select id="ind-env">
+            <option value="https://api.signaturit.com">Producción</option>
+            <option value="https://api.sandbox.signaturit.com">Sandbox</option>
+          </select>
+        </div>
+        <div class="config-card">
+          <label>Token API <span class="req">*</span></label>
+          <input type="password" id="ind-token" placeholder="Pega tu token aquí">
+        </div>
+        <div class="config-card">
+          <label>Email destinatario <span class="req">*</span></label>
+          <input type="email" id="ind-email" placeholder="destinatario@email.com">
+        </div>
+        <div class="config-card">
+          <label>Nombre destinatario</label>
+          <input type="text" id="ind-name" placeholder="Nombre completo">
+        </div>
+      </div>
+
+      <!-- Template selector (only for template mode) -->
+      <div class="config-card config-full" id="ind-template-section" style="display:none;margin-bottom:14px">
+        <label>Template</label>
+        <div style="display:flex;gap:8px">
+          <select id="ind-template-select" style="flex:1"><option value="">— Carga los templates primero —</option></select>
+          <button class="btn btn-outline btn-small" onclick="fetchTemplatesIndividual()">🔄 Cargar</button>
+        </div>
+      </div>
+
+      <!-- Subject -->
+      <div class="config-card config-full" style="margin-bottom:14px">
+        <div class="field-toggle">
+          <label>Asunto</label>
+          <label class="toggle-switch"><input type="checkbox" id="ind-subject-toggle"><span class="toggle-slider"></span></label>
+        </div>
+        <input type="text" id="ind-subject" placeholder="Asunto del email" disabled>
+      </div>
+
+      <!-- Body -->
+      <div class="config-card config-full" style="margin-bottom:14px">
+        <div class="field-toggle">
+          <label>Cuerpo del email</label>
+          <label class="toggle-switch"><input type="checkbox" id="ind-body-toggle"><span class="toggle-slider"></span></label>
+        </div>
+        <textarea id="ind-body" rows="3" placeholder="Cuerpo del mensaje..." disabled></textarea>
+      </div>
+
+      <!-- Branding -->
+      <div class="config-card config-full" style="margin-bottom:14px">
+        <div class="field-toggle">
+          <label>Branding ID</label>
+          <label class="toggle-switch"><input type="checkbox" id="ind-branding-toggle"><span class="toggle-slider"></span></label>
+        </div>
+        <input type="text" id="ind-branding" placeholder="ID del branding" disabled>
+      </div>
+
+      <!-- SMS fields -->
+      <div id="ind-sms-fields" style="display:none">
+        <div class="config-card config-full" style="margin-bottom:14px">
+          <label>Teléfono destinatario <span class="req">*</span></label>
+          <input type="text" id="ind-phone" placeholder="+34600000000">
+        </div>
+        <div class="config-card config-full" style="margin-bottom:14px">
+          <label>Cuerpo del SMS <span class="req">*</span></label>
+          <textarea id="ind-sms-body" rows="3" placeholder="Texto del SMS certificado..."></textarea>
+        </div>
+      </div>
+
+      <!-- File upload -->
+      <div id="ind-file-section">
+        <div class="drop-zone" id="indDropZone" onclick="document.getElementById('indFileInput').click()">
+          <div class="drop-icon">📄</div>
+          <div class="drop-text">Arrastra un PDF o haz clic para seleccionar</div>
+          <div class="drop-hint">Máximo 5 MB</div>
+        </div>
+        <input type="file" id="indFileInput" accept=".pdf" style="display:none">
+      </div>
+
+      <div class="actions">
+        <div></div>
+        <button class="btn btn-success" onclick="sendIndividual()">🚀 Enviar</button>
+      </div>
+
+      <div class="log-area" id="indLog" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- ==================== BULK MODE ==================== -->
+  <div id="bulkMode" style="display:none">
+    <div class="steps-bar" id="stepsBar">
+      <div class="step-item active" onclick="goToStep(1)"><div class="step-num">1</div><span class="step-label">Configuración</span></div>
+      <div class="step-connector"></div>
+      <div class="step-item" onclick="goToStep(2)"><div class="step-num">2</div><span class="step-label">Archivos</span></div>
+      <div class="step-connector"></div>
+      <div class="step-item" onclick="goToStep(3)"><div class="step-num">3</div><span class="step-label">Mapeo</span></div>
+      <div class="step-connector"></div>
+      <div class="step-item" onclick="goToStep(4)"><div class="step-num">4</div><span class="step-label">Envío</span></div>
+    </div>
+
+    <div class="main">
+      <!-- STEP 1 -->
+      <div class="panel active" id="panel1">
+        <h2 class="section-title">Configuración</h2>
+        <p class="section-desc">Solo <strong>Email</strong> es obligatorio en el mapeo. El resto es opcional.</p>
+
+        <div class="config-grid">
+          <div class="config-card">
+            <label>Entorno <span class="req">*</span></label>
+            <select id="cfg-env">
+              <option value="https://api.signaturit.com">Producción</option>
+              <option value="https://api.sandbox.signaturit.com">Sandbox</option>
+            </select>
+          </div>
+          <div class="config-card">
+            <label>Token API <span class="req">*</span></label>
+            <input type="password" id="cfg-token" placeholder="Pega tu token aquí">
+          </div>
+        </div>
+
+        <!-- Template selector -->
+        <div class="config-card config-full" id="bulk-template-section" style="display:none;margin-bottom:14px">
+          <label>Template</label>
+          <div style="display:flex;gap:8px">
+            <select id="bulk-template-select" style="flex:1"><option value="">— Carga los templates primero —</option></select>
+            <button class="btn btn-outline btn-small" onclick="fetchTemplatesBulk()">🔄 Cargar</button>
+          </div>
+        </div>
+
+        <!-- Optional fields -->
+        <div class="config-grid">
+          <div class="config-card">
+            <div class="field-toggle">
+              <label>Asunto</label>
+              <label class="toggle-switch"><input type="checkbox" id="toggle-subject" onchange="toggleField('cfg-subject',this)"><span class="toggle-slider"></span></label>
+            </div>
+            <input type="text" id="cfg-subject" placeholder="Asunto del email" disabled>
+          </div>
+          <div class="config-card">
+            <div class="field-toggle">
+              <label>Branding ID</label>
+              <label class="toggle-switch"><input type="checkbox" id="toggle-branding" onchange="toggleField('cfg-branding',this)"><span class="toggle-slider"></span></label>
+            </div>
+            <input type="text" id="cfg-branding" placeholder="ID del branding" disabled>
+          </div>
+          <div class="config-card config-full">
+            <div class="field-toggle">
+              <label>Cuerpo del email</label>
+              <label class="toggle-switch"><input type="checkbox" id="toggle-body" onchange="toggleField('cfg-body',this)"><span class="toggle-slider"></span></label>
+            </div>
+            <textarea id="cfg-body" rows="3" placeholder="Cuerpo del mensaje. Usa variables como {{signer_name}}..." disabled></textarea>
+          </div>
+        </div>
+
+        <!-- SMS bulk body -->
+        <div class="config-card config-full" id="bulk-sms-body-section" style="display:none;margin-bottom:14px">
+          <label>Cuerpo del SMS <span class="req">*</span></label>
+          <textarea id="cfg-sms-body" rows="3" placeholder="Texto del SMS. Usa {{nombre}} para personalizar..."></textarea>
+        </div>
+
+        <!-- Variable toolbar -->
+        <div class="var-toolbar" id="varToolbar">
+          <div class="var-toolbar-header">
+            <h4>📌 Variables</h4>
+            <span class="var-count" id="varCount">14</span>
+          </div>
+          <div class="var-chips" id="varChips"></div>
+        </div>
+
+        <div class="actions">
+          <div></div>
+          <button class="btn btn-primary" onclick="goToStep(2)">Siguiente →</button>
+        </div>
+      </div>
+
+      <!-- STEP 2 -->
+      <div class="panel" id="panel2">
+        <h2 class="section-title">Subir archivos</h2>
+        <p class="section-desc">Sube el CSV con los datos y los PDFs correspondientes</p>
+
+        <div class="drop-zone" id="csvDropZone" onclick="document.getElementById('csvInput').click()">
+          <div class="drop-icon">📋</div>
+          <div class="drop-text">Arrastra tu archivo CSV o haz clic</div>
+          <div class="drop-hint">Separador: coma o punto y coma</div>
+        </div>
+        <input type="file" id="csvInput" accept=".csv" style="display:none">
+
+        <div id="pdfUploadSection">
+          <div class="drop-zone" id="pdfDropZone" onclick="document.getElementById('pdfInput').click()">
+            <div class="drop-icon">📁</div>
+            <div class="drop-text">Arrastra los PDFs o haz clic</div>
+            <div class="drop-hint">Se emparejan por nombre con la columna del CSV</div>
+          </div>
+          <input type="file" id="pdfInput" accept=".pdf" multiple style="display:none">
+          <div class="pdf-list-container" id="pdfListContainer" style="display:none">
+            <div class="pdf-list-header">
+              <h3>📎 Archivos PDF</h3>
+              <span id="pdfCount" class="stat-badge">0</span>
+            </div>
+            <div class="pdf-list-scroll" id="pdfListBody"></div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-secondary" onclick="goToStep(1)">← Atrás</button>
+          <button class="btn btn-primary" onclick="goToStep(3)">Siguiente →</button>
+        </div>
+      </div>
+
+      <!-- STEP 3 -->
+      <div class="panel" id="panel3">
+        <h2 class="section-title">Mapeo de columnas</h2>
+        <p class="section-desc">Asigna las columnas del CSV. Solo <strong>Email</strong> es obligatorio.</p>
+        <div class="mapping-grid" id="mappingGrid"></div>
+        <div class="table-container" id="previewContainer" style="display:none">
+          <div class="table-header"><h3>Vista previa</h3><div class="table-stats" id="previewStats"></div></div>
+          <div class="table-scroll"><table><thead id="previewHead"></thead><tbody id="previewBody"></tbody></table></div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-secondary" onclick="goToStep(2)">← Atrás</button>
+          <button class="btn btn-primary" onclick="goToStep(4)">Siguiente →</button>
+        </div>
+      </div>
+
+      <!-- STEP 4 -->
+      <div class="panel" id="panel4">
+        <h2 class="section-title">Enviar</h2>
+        <p class="section-desc">Revisa el resumen y lanza el envío</p>
+        <div class="summary-box" id="summaryBox"></div>
+        <div class="delay-config">
+          <label>⏱ Delay entre envíos:</label>
+          <input type="number" id="cfg-delay" value="2" min="0" max="60">
+          <span>segundos</span>
+        </div>
+        <div class="actions" style="margin-bottom:18px">
+          <button class="btn btn-secondary" onclick="goToStep(3)">← Atrás</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary" id="btnStop" onclick="stopSending()" style="display:none">⏹ Detener</button>
+            <button class="btn btn-success" id="btnSend" onclick="startBulkSend()">🚀 Iniciar envío</button>
+          </div>
+        </div>
+        <div class="progress-area" id="progressArea" style="display:none">
+          <div class="progress-bar-container"><div class="progress-bar-fill" id="progressFill"></div></div>
+          <div class="progress-stats"><span id="progressText">0/0</span><span id="progressPct">0%</span></div>
+        </div>
+        <div class="log-area" id="logArea" style="display:none"></div>
+        <div class="table-container" id="resultsContainer" style="display:none">
+          <div class="table-header"><h3>Resultados</h3><div class="table-stats" id="resultsStats"></div></div>
+          <div class="table-scroll"><table><thead id="resultsHead"></thead><tbody id="resultsBody"></tbody></table></div>
+        </div>
+        <div id="exportArea" style="display:none;padding-top:10px">
+          <button class="btn btn-outline btn-small" onclick="exportLog()">📥 Exportar log</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Variable modal -->
+<div class="modal-overlay" id="varModal">
+  <div class="modal">
+    <h3>Variables disponibles</h3>
+    <div class="modal-var-list" id="modalVarList"></div>
+    <div class="modal-add-row">
+      <input type="text" id="newVarName" placeholder="nombre_variable">
+      <input type="text" id="newVarDesc" placeholder="Descripción">
+      <button class="btn btn-primary btn-small" onclick="addCustomVariable()">Añadir</button>
+    </div>
+    <div style="text-align:right"><button class="btn btn-secondary btn-small" onclick="closeVarModal()">Cerrar</button></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
