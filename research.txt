@@ -1,0 +1,252 @@
+================================================================================
+RESEARCH: ENVIOS PROGRAMADOS + REPETICIONES — Multi Send Signaturit
+================================================================================
+
+FECHA: 2026-02-18
+ESTADO: Fase de investigacion / definicion de requerimientos
+
+================================================================================
+1. QUE SE QUIERE LOGRAR
+================================================================================
+
+El usuario quiere poder:
+  a) Programar un envio masivo para una fecha/hora futura
+  b) Configurar repeticiones (ej: cada lunes, cada mes, etc.)
+  c) Que los envios se ejecuten automaticamente sin tener el navegador abierto
+
+================================================================================
+2. POR QUE NO SE PUEDE HACER SOLO CON FRONTEND
+================================================================================
+
+Hoy la app es 100% estatica (GitHub Pages). El envio ocurre en el navegador:
+  - Si el usuario cierra el navegador, se pierde todo
+  - No hay persistencia de datos
+  - No hay ejecucion en background
+
+Para envios programados NECESITAMOS:
+  [1] Almacenamiento persistente -> guardar: datos CSV, PDFs, config, schedule
+  [2] Un scheduler/cron -> algo que despierte y ejecute en la fecha programada
+  [3] Logica de envio server-side -> la misma logica de envio pero en el backend
+  [4] Estado y logs -> saber si se ejecuto, resultados, errores
+
+================================================================================
+3. OPCIONES DE ARQUITECTURA
+================================================================================
+
+--- OPCION A: Supabase (ya lo usamos como proxy) ---
+
+  Componentes:
+    - Supabase Database (Postgres) -> guardar jobs, schedules, logs
+    - Supabase Storage -> guardar los PDFs subidos
+    - Supabase Edge Functions -> logica de envio (mover la logica de app.js aqui)
+    - pg_cron (extension de Postgres) -> ejecutar queries en schedule
+    - Supabase Realtime (opcional) -> notificar al frontend del progreso
+
+  Flujo:
+    1. Usuario configura envio + schedule en el frontend
+    2. Frontend sube PDFs a Supabase Storage
+    3. Frontend crea un "job" en la tabla `scheduled_jobs` con:
+       - operation_type, api_token (encriptado), environment
+       - recipients (JSON), template_id, subject, body, branding_id
+       - schedule_type: "once" | "recurring"
+       - schedule_cron: expresion cron (ej: "0 9 * * 1" = cada lunes a las 9)
+       - next_run_at: timestamp
+       - status: "pending" | "running" | "completed" | "failed"
+    4. pg_cron ejecuta cada minuto un check:
+       - Busca jobs donde next_run_at <= NOW() AND status = 'pending'
+       - Para cada uno, invoca una Edge Function que hace los envios
+    5. La Edge Function:
+       - Lee el job de la DB
+       - Descarga PDFs de Storage
+       - Ejecuta los envios a la API de Signaturit (misma logica que el frontend)
+       - Guarda resultados/logs en la DB
+       - Si es recurring, calcula next_run_at y actualiza
+    6. Frontend puede consultar estado y logs en cualquier momento
+
+  Pros:
+    + Ya usamos Supabase (proxy), no es un servicio nuevo
+    + Free tier generoso: 500MB DB, 1GB Storage, 500K Edge Function invocations
+    + pg_cron es nativo de Supabase (hay que habilitarlo)
+    + Realtime gratis para notificar al frontend
+
+  Contras:
+    - pg_cron tiene resolucion minima de 1 minuto
+    - Edge Functions tienen timeout de 150s (free) -> para envios grandes hay que
+      partir en batches o usar background tasks
+    - Hay que gestionar encriptacion del API token (no guardarlo en plaintext)
+    - Mover la logica de envio al backend es trabajo significativo
+
+  Limites Free Tier Supabase:
+    - Database: 500MB
+    - Storage: 1GB
+    - Edge Functions: 500K invocaciones/mes, 2M runtime seconds
+    - pg_cron: disponible en todos los planes
+
+
+--- OPCION B: Cloudflare Workers + Cron Triggers ---
+
+  Componentes:
+    - Cloudflare Workers -> logica de envio
+    - Cron Triggers -> scheduling (expresiones cron)
+    - Cloudflare KV o D1 -> almacenamiento de jobs
+    - Cloudflare R2 -> almacenamiento de PDFs
+
+  Flujo: Similar al de Supabase pero con servicios de Cloudflare.
+
+  Pros:
+    + Cron Triggers es muy fiable y preciso
+    + Workers son rapidos y tienen buen free tier
+    + R2 tiene free tier generoso (10GB)
+
+  Contras:
+    - Otro ecosistema mas (ya usamos Supabase)
+    - Workers free tier: 10ms CPU time por request (puede ser limitante)
+    - Mas complejo de configurar
+    - D1 esta en beta
+
+
+--- OPCION C: Backend propio (Node.js/Deno) ---
+
+  Componentes:
+    - Servidor Node.js/Deno (Railway, Fly.io, Render)
+    - Base de datos (SQLite, Postgres)
+    - node-cron o agenda.js para scheduling
+    - Almacenamiento de archivos (local o S3)
+
+  Pros:
+    + Control total
+    + Sin limites artificiales
+    + Mas facil de debuggear
+
+  Contras:
+    - Necesita hosting (Railway free tier = $5/mes despues de trial)
+    - Hay que mantener un servidor
+    - Mas codigo, mas complejidad
+
+================================================================================
+4. RECOMENDACION
+================================================================================
+
+OPCION A (Supabase) es la mas logica porque:
+  - Ya tenemos el proxy ahi
+  - No introduce servicios nuevos
+  - El free tier cubre sobradamente el uso esperado
+  - pg_cron + Edge Functions cubren el caso de uso
+
+================================================================================
+5. ESQUEMA DE BASE DE DATOS (borrador)
+================================================================================
+
+-- Tabla: scheduled_jobs
+CREATE TABLE scheduled_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+
+  -- Config del envio
+  operation_type TEXT NOT NULL,        -- 'advanced', 'simple', 'email', 'sms'
+  environment TEXT NOT NULL,           -- URL del API
+  api_token_encrypted TEXT NOT NULL,   -- token encriptado
+  template_id TEXT,
+  subject TEXT,
+  body TEXT,
+  branding_id TEXT,
+  sms_body TEXT,
+
+  -- Datos de destinatarios
+  recipients JSONB NOT NULL,           -- array de {email, name, phone, fileName, signers[]}
+  pdf_paths TEXT[],                    -- paths en Supabase Storage
+
+  -- Schedule
+  schedule_type TEXT NOT NULL,         -- 'once', 'daily', 'weekly', 'monthly', 'cron'
+  cron_expression TEXT,                -- '0 9 * * 1' para weekly lunes 9am
+  timezone TEXT DEFAULT 'Europe/Madrid',
+  next_run_at TIMESTAMPTZ,
+  last_run_at TIMESTAMPTZ,
+  repeat_until TIMESTAMPTZ,           -- NULL = indefinido
+  max_runs INT,                       -- NULL = indefinido
+  run_count INT DEFAULT 0,
+
+  -- Estado
+  status TEXT DEFAULT 'pending',       -- 'pending', 'running', 'paused', 'completed', 'failed'
+  last_result JSONB,                   -- {ok: N, errors: N, log: [...]}
+
+  -- Notificacion
+  notify_email TEXT                    -- email para notificar al terminar
+);
+
+-- Tabla: job_logs
+CREATE TABLE job_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID REFERENCES scheduled_jobs(id),
+  executed_at TIMESTAMPTZ DEFAULT NOW(),
+  total_sent INT,
+  total_ok INT,
+  total_errors INT,
+  details JSONB                        -- array con resultado por destinatario
+);
+
+================================================================================
+6. PREGUNTAS ABIERTAS PARA DEFINIR REQUERIMIENTOS
+================================================================================
+
+  Q1: Donde se guarda el API token del usuario?
+      -> Opciones: encriptado en Supabase DB, o el usuario lo proporciona cada vez
+      -> Riesgo de seguridad si se guarda (aunque sea encriptado)
+
+  Q2: Que pasa con los PDFs?
+      -> Si el envio usa PDFs, hay que subirlos a Supabase Storage
+      -> Hay que definir politica de retencion (borrar despues de X dias?)
+
+  Q3: Limites de repeticion?
+      -> Maximo de repeticiones? Frecuencia minima?
+      -> Que pasa si un envio falla? Reintentar automaticamente?
+
+  Q4: Autenticacion de usuarios?
+      -> Hoy no hay login. Si guardamos jobs, quien puede verlos/editarlos?
+      -> Opciones: sin auth (cualquiera con la URL), magic link, Supabase Auth
+
+  Q5: UI para gestionar jobs programados?
+      -> Dashboard con lista de jobs, estado, proxima ejecucion
+      -> Editar/pausar/cancelar jobs
+      -> Ver logs de ejecuciones pasadas
+
+  Q6: Notificaciones?
+      -> Solo email al terminar? O tambien alertas de error?
+      -> Webhook a URL externa como alternativa?
+
+  Q7: Timezone?
+      -> El schedule se configura en timezone del usuario?
+      -> Se detecta automaticamente o se selecciona?
+
+  Q8: Concurrencia?
+      -> Que pasa si dos jobs se ejecutan al mismo tiempo?
+      -> Rate limiting de la API de Signaturit?
+
+================================================================================
+7. MVP vs FULL FEATURE
+================================================================================
+
+--- MVP (primera version) ---
+  - Programar UN envio para fecha/hora futura (sin repeticion)
+  - Los datos se guardan en Supabase DB + Storage
+  - pg_cron chequea cada minuto y ejecuta
+  - Email de notificacion al terminar
+  - Sin autenticacion (el job se identifica por UUID)
+  - UI: un paso extra en el Step 4 para elegir "Enviar ahora" o "Programar"
+
+--- V2 (segunda iteracion) ---
+  - Repeticiones (daily, weekly, monthly, cron custom)
+  - Dashboard de jobs programados
+  - Pausar/reanudar/cancelar
+  - Logs historicos
+  - Reintentos automaticos en caso de fallo
+
+--- V3 (si crece) ---
+  - Autenticacion de usuarios (Supabase Auth)
+  - Multiples usuarios con sus propios jobs
+  - Webhooks a URLs externas
+  - API REST para crear jobs programaticamente
+
+================================================================================
+FIN DEL DOCUMENTO
+================================================================================

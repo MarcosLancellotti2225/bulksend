@@ -1,5 +1,5 @@
 /* ============================================
-   Signaturit Sender v2 — App Logic
+   Multi Send Signaturit — App Logic
    ============================================ */
 
 const PROXY_URL = 'https://plejrqzzxnypnxxnamxj.supabase.co/functions/v1/signaturit-proxy';
@@ -20,7 +20,6 @@ const OPERATION_LABELS = {
 
 /* ===== STATE ===== */
 let operationType = null;
-let sendMode = null;
 let currentStep = 1;
 let dataRows = [], dataHeaders = [];
 let pdfFiles = {};
@@ -29,10 +28,8 @@ let sendLog = [];
 let sending = false;
 let customVariables = [];
 let activeTextField = null;
-let individualFile = null;
 let templatesList = [];
 let useTemplate = false;
-let indSigners = [{ name: '', email: '', role: 'signer' }];
 let bulkSignerCount = 1;
 
 const OFFICIAL_VARIABLES = [
@@ -57,68 +54,43 @@ const OFFICIAL_VARIABLES = [
    ======================================== */
 
 function selectOperationType(el) {
-  document.querySelectorAll('#launcherStep1 .launcher-option').forEach(o => o.classList.remove('selected'));
+  document.querySelectorAll('.launcher-option').forEach(o => o.classList.remove('selected'));
   el.classList.add('selected');
   operationType = el.dataset.type;
-  document.getElementById('launcherNext1').disabled = false;
-}
-
-function selectSendMode(el) {
-  document.querySelectorAll('#launcherStep2 .launcher-option').forEach(o => o.classList.remove('selected'));
-  el.classList.add('selected');
-  sendMode = el.dataset.mode;
   document.getElementById('launcherStart').disabled = false;
 }
 
-function goLauncherStep(n) {
-  document.querySelectorAll('.launcher-step').forEach(s => s.classList.remove('active'));
-  document.getElementById('launcherStep' + n).classList.add('active');
-}
-
 function startApp() {
-  if (!operationType || !sendMode) return;
+  if (!operationType) return;
   document.getElementById('launcherOverlay').classList.add('hidden');
   document.getElementById('appWrapper').classList.add('active');
   document.getElementById('badgeOperation').textContent = OPERATION_LABELS[operationType];
-  document.getElementById('badgeMode').textContent = sendMode === 'individual' ? 'Individual' : 'Masivo';
-
-  if (sendMode === 'individual') {
-    document.getElementById('individualMode').style.display = 'block';
-    document.getElementById('bulkMode').style.display = 'none';
-    setupIndividualMode();
-  } else {
-    document.getElementById('individualMode').style.display = 'none';
-    document.getElementById('bulkMode').style.display = 'block';
-    setupBulkMode();
-  }
+  setupBulkMode();
 }
 
 function resetLauncher() {
-  operationType = null; sendMode = null; currentStep = 1;
+  operationType = null; currentStep = 1;
   dataRows = []; dataHeaders = []; pdfFiles = {};
   matchedData = []; sendLog = []; sending = false;
-  individualFile = null; templatesList = []; useTemplate = false;
-  indSigners = [{ name: '', email: '', role: 'signer' }];
+  templatesList = []; useTemplate = false;
   bulkSignerCount = 1;
 
   document.getElementById('appWrapper').classList.remove('active');
   document.getElementById('launcherOverlay').classList.remove('hidden');
   document.querySelectorAll('.launcher-option').forEach(o => o.classList.remove('selected'));
-  document.getElementById('launcherNext1').disabled = true;
   document.getElementById('launcherStart').disabled = true;
-  goLauncherStep(1);
 }
 
 /* ========================================
    TEMPLATES FETCH
    ======================================== */
 
-async function fetchTemplates(prefix) {
-  const env = document.getElementById(prefix === 'ind' ? 'ind-env' : 'cfg-env').value;
-  const token = document.getElementById(prefix === 'ind' ? 'ind-token' : 'cfg-token').value.trim();
+async function fetchTemplates() {
+  const env = document.getElementById('cfg-env').value;
+  const token = document.getElementById('cfg-token').value.trim();
   if (!token) { alert('Ingresa el token API primero'); return; }
 
-  const sel = document.getElementById(`${prefix}-tpl-select`);
+  const sel = document.getElementById('bulk-tpl-select');
   sel.innerHTML = '<option value="">⏳ Cargando...</option>';
 
   try {
@@ -137,187 +109,6 @@ async function fetchTemplates(prefix) {
       data.map(t => `<option value="${t.id}">${t.name || t.id}</option>`).join('');
   } catch (err) {
     sel.innerHTML = '<option value="">❌ Error de conexión</option>';
-  }
-}
-
-/* ========================================
-   INDIVIDUAL MODE
-   ======================================== */
-
-function setupIndividualMode() {
-  const isSMS = operationType === 'sms';
-  const isAdvanced = operationType === 'advanced';
-
-  document.getElementById('individualTitle').textContent = `Envío individual — ${OPERATION_LABELS[operationType]}`;
-  document.getElementById('individualDesc').textContent = isSMS
-    ? 'Completa los datos del SMS certificado'
-    : 'Completa los datos y adjunta el documento';
-
-  // Show/hide sections
-  document.getElementById('ind-sms-fields').style.display = isSMS ? 'block' : 'none';
-  document.getElementById('ind-tpl-section').style.display = isSMS ? 'none' : 'block';
-  document.getElementById('ind-signers-section').style.display = isAdvanced ? 'block' : 'none';
-  document.getElementById('ind-single-recipient').style.display = isAdvanced ? 'none' : 'block';
-
-  if (isAdvanced) renderIndSigners();
-
-  // Toggle wiring
-  ['subject', 'body', 'branding'].forEach(f => {
-    const t = document.getElementById(`ind-${f}-toggle`);
-    const inp = document.getElementById(`ind-${f}`);
-    if (t && inp) t.onchange = () => { inp.disabled = !t.checked; };
-  });
-
-  updateIndFileVisibility();
-  setupDropZone('indDropZone', 'indFileInput', handleIndividualFile);
-}
-
-function toggleIndTemplate() {
-  useTemplate = document.getElementById('ind-tpl-toggle').checked;
-  document.getElementById('ind-tpl-picker').style.display = useTemplate ? 'block' : 'none';
-  updateIndFileVisibility();
-}
-
-function updateIndFileVisibility() {
-  const isSMS = operationType === 'sms';
-  const showFile = !isSMS && !useTemplate;
-  document.getElementById('ind-file-section').style.display = showFile ? 'block' : 'none';
-}
-
-// ===== Multi-signer (individual advanced) =====
-
-function renderIndSigners() {
-  const list = document.getElementById('ind-signers-list');
-  list.innerHTML = indSigners.map((s, i) =>
-    `<div class="signer-row">
-      <span class="signer-order">#${i + 1}</span>
-      <select onchange="indSigners[${i}].role=this.value">
-        <option value="signer" ${s.role === 'signer' ? 'selected' : ''}>Firmante</option>
-        <option value="validator" ${s.role === 'validator' ? 'selected' : ''}>Validador</option>
-      </select>
-      <input type="text" placeholder="Nombre" value="${esc(s.name)}" onchange="indSigners[${i}].name=this.value">
-      <input type="email" placeholder="Email" value="${esc(s.email)}" onchange="indSigners[${i}].email=this.value">
-      ${indSigners.length > 1 ? `<button class="btn-remove-signer" onclick="removeIndSigner(${i})">×</button>` : '<div></div>'}
-    </div>`
-  ).join('');
-}
-
-function addIndSigner() {
-  indSigners.push({ name: '', email: '', role: 'signer' });
-  renderIndSigners();
-}
-
-function removeIndSigner(i) {
-  indSigners.splice(i, 1);
-  renderIndSigners();
-}
-
-function handleIndividualFile(files) {
-  if (!files.length) return;
-  const file = files[0];
-  if (!file.name.toLowerCase().endsWith('.pdf')) { alert('Solo archivos PDF'); return; }
-  individualFile = file;
-  const zone = document.getElementById('indDropZone');
-  zone.classList.add('has-file');
-  zone.innerHTML = `<div class="file-info">✅ ${file.name} (${formatSize(file.size)})</div>`;
-}
-
-/* ===== Individual Send ===== */
-
-async function sendIndividual() {
-  const env = document.getElementById('ind-env').value;
-  const token = document.getElementById('ind-token').value.trim();
-  const logEl = document.getElementById('indLog');
-  logEl.style.display = 'block'; logEl.innerHTML = '';
-  const ilog = (msg, cls) => { logEl.innerHTML += `<div class="log-line ${cls || ''}">[${new Date().toLocaleTimeString()}] ${msg}</div>`; logEl.scrollTop = logEl.scrollHeight; };
-
-  if (!token) { ilog('❌ Falta el token API', 'error'); return; }
-
-  // SMS
-  if (operationType === 'sms') {
-    const phone = document.getElementById('ind-phone').value.trim();
-    const smsBody = document.getElementById('ind-sms-body').value.trim();
-    if (!phone) { ilog('❌ Falta el teléfono', 'error'); return; }
-    if (!smsBody) { ilog('❌ Falta el cuerpo del SMS', 'error'); return; }
-    ilog(`📤 Enviando SMS a ${phone}...`, 'info');
-    const fd = new FormData();
-    fd.append('recipients[0][phone]', phone);
-    fd.append('body', smsBody);
-    await proxyPost(env + API_ENDPOINTS.sms, token, fd, ilog);
-    return;
-  }
-
-  // Advanced (multi-signer)
-  if (operationType === 'advanced') {
-    const validSigners = indSigners.filter(s => s.email.trim());
-    if (!validSigners.length) { ilog('❌ Al menos un firmante necesita email', 'error'); return; }
-    const fd = new FormData();
-    validSigners.forEach((s, i) => {
-      fd.append(`recipients[${i}][name]`, s.name || s.email.split('@')[0]);
-      fd.append(`recipients[${i}][email]`, s.email.trim());
-    });
-    fd.append('type', 'advanced');
-    if (useTemplate) {
-      const tplId = document.getElementById('ind-tpl-select').value;
-      if (!tplId) { ilog('❌ Selecciona una plantilla', 'error'); return; }
-      fd.append('templates[0]', tplId);
-    } else {
-      if (!individualFile) { ilog('❌ Falta el archivo PDF', 'error'); return; }
-      fd.append('files[0]', individualFile, individualFile.name);
-    }
-    appendOptionalFields(fd, 'ind');
-    ilog(`📤 Enviando firma avanzada a ${validSigners.length} firmante(s)...`, 'info');
-    await proxyPost(env + API_ENDPOINTS.advanced, token, fd, ilog);
-    return;
-  }
-
-  // Simple / Email
-  const email = document.getElementById('ind-email').value.trim();
-  const name = document.getElementById('ind-name').value.trim();
-  if (!email) { ilog('❌ Falta el email', 'error'); return; }
-
-  const fd = new FormData();
-  fd.append('recipients[0][name]', name || email.split('@')[0]);
-  fd.append('recipients[0][email]', email);
-
-  if (useTemplate) {
-    const tplId = document.getElementById('ind-tpl-select').value;
-    if (!tplId) { ilog('❌ Selecciona una plantilla', 'error'); return; }
-    fd.append('templates[0]', tplId);
-  } else {
-    if (!individualFile) { ilog('❌ Falta el archivo PDF', 'error'); return; }
-    fd.append('files[0]', individualFile, individualFile.name);
-  }
-  appendOptionalFields(fd, 'ind');
-  ilog(`📤 Enviando ${OPERATION_LABELS[operationType]} a ${email}...`, 'info');
-  await proxyPost(env + API_ENDPOINTS[operationType], token, fd, ilog);
-}
-
-async function proxyPost(apiUrl, token, fd, ilog) {
-  try {
-    const resp = await fetch(PROXY_URL, {
-      method: 'POST',
-      headers: { 'x-signaturit-token': token, 'x-api-url': apiUrl },
-      body: fd
-    });
-    const data = await resp.json();
-    if (resp.ok && data.id) ilog(`✅ Enviado — ID: ${data.id}`, 'success');
-    else ilog(`❌ Error: ${data.message || JSON.stringify(data)}`, 'error');
-  } catch (err) { ilog(`❌ ${err.message}`, 'error'); }
-}
-
-function appendOptionalFields(fd, prefix) {
-  if (document.getElementById(`${prefix}-subject-toggle`)?.checked) {
-    const v = document.getElementById(`${prefix}-subject`).value.trim();
-    if (v) fd.append('subject', v);
-  }
-  if (document.getElementById(`${prefix}-body-toggle`)?.checked) {
-    const v = document.getElementById(`${prefix}-body`).value.trim();
-    if (v) fd.append('body', v);
-  }
-  if (document.getElementById(`${prefix}-branding-toggle`)?.checked) {
-    const v = document.getElementById(`${prefix}-branding`).value.trim();
-    if (v) fd.append('branding_id', v);
   }
 }
 
@@ -821,6 +612,22 @@ async function startBulkSend() {
     if (big.length && !confirm(`${big.length} archivo(s) superan 5 MB. ¿Continuar?`)) return;
   }
 
+  // Validar URLs en subject/body (Signaturit no las permite)
+  const urlRegex = /https?:\/\/|www\./i;
+  const preSubj = document.getElementById('toggle-subject')?.checked ? document.getElementById('cfg-subject').value.trim() : '';
+  const preBody = document.getElementById('toggle-body')?.checked ? document.getElementById('cfg-body').value.trim() : '';
+  const preSmsBody = document.getElementById('cfg-sms-body')?.value?.trim() || '';
+
+  const fieldsWithUrls = [];
+  if (urlRegex.test(preSubj)) fieldsWithUrls.push('Asunto');
+  if (urlRegex.test(preBody)) fieldsWithUrls.push('Cuerpo del email');
+  if (isSMS && urlRegex.test(preSmsBody)) fieldsWithUrls.push('Cuerpo del SMS');
+
+  if (fieldsWithUrls.length) {
+    alert(`⚠️ Signaturit no permite URLs en: ${fieldsWithUrls.join(', ')}.\n\nElimina los enlaces (http://, https://, www.) antes de enviar.`);
+    return;
+  }
+
   sending = true; sendLog = [];
   const delay = parseInt(document.getElementById('cfg-delay').value) || 2;
   const env = document.getElementById('cfg-env').value;
@@ -835,8 +642,8 @@ async function startBulkSend() {
   const log = (msg, cls) => { logEl.innerHTML += `<div class="log-line ${cls||''}">[${new Date().toLocaleTimeString()}] ${msg}</div>`; logEl.scrollTop = logEl.scrollHeight; };
   log(`🚀 Iniciando ${validItems.length} envío(s) de ${OPERATION_LABELS[operationType]}...`, 'info');
 
-  const subj = document.getElementById('toggle-subject')?.checked ? document.getElementById('cfg-subject').value.trim() : '';
-  const body = document.getElementById('toggle-body')?.checked ? document.getElementById('cfg-body').value.trim() : '';
+  const subj = preSubj;
+  const body = preBody;
   const brand = document.getElementById('toggle-branding')?.checked ? document.getElementById('cfg-branding').value.trim() : '';
   const smsBody = document.getElementById('cfg-sms-body')?.value?.trim() || '';
   const tplId = document.getElementById('bulk-tpl-select')?.value || '';
@@ -924,6 +731,93 @@ function exportLog() {
   const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
   a.download = `signaturit-log-${Date.now()}.csv`; a.click();
+}
+
+/* ===== TEMPLATE DOWNLOADS ===== */
+
+function getTemplateSampleData() {
+  const isSMS = operationType === 'sms';
+  const isAdvanced = operationType === 'advanced';
+
+  if (isSMS) {
+    return {
+      headers: ['phone', 'name'],
+      rows: [
+        ['+34600111222', 'Joe Doe'],
+        ['+34600333444', 'Jane Smith'],
+        ['+34600555666', 'Carlos Garcia'],
+        ['+34600777888', 'Maria Lopez'],
+        ['+34600999000', 'Pedro Martinez']
+      ]
+    };
+  }
+
+  if (isAdvanced) {
+    return {
+      headers: ['email', 'name', 'email_2', 'name_2', 'file'],
+      rows: [
+        ['joe.doe@example.com', 'Joe Doe', 'jane.smith@example.com', 'Jane Smith', 'contrato_joe.pdf'],
+        ['carlos.garcia@example.com', 'Carlos Garcia', 'maria.lopez@example.com', 'Maria Lopez', 'contrato_carlos.pdf'],
+        ['pedro.martinez@example.com', 'Pedro Martinez', 'ana.ruiz@example.com', 'Ana Ruiz', 'contrato_pedro.pdf'],
+        ['luis.fernandez@example.com', 'Luis Fernandez', 'sofia.torres@example.com', 'Sofia Torres', 'contrato_luis.pdf'],
+        ['elena.moreno@example.com', 'Elena Moreno', 'david.jimenez@example.com', 'David Jimenez', 'contrato_elena.pdf']
+      ]
+    };
+  }
+
+  // simple / email
+  return {
+    headers: ['email', 'name', 'file'],
+    rows: [
+      ['joe.doe@example.com', 'Joe Doe', 'contrato_joe.pdf'],
+      ['jane.smith@example.com', 'Jane Smith', 'contrato_jane.pdf'],
+      ['carlos.garcia@example.com', 'Carlos Garcia', 'contrato_carlos.pdf'],
+      ['maria.lopez@example.com', 'Maria Lopez', 'contrato_maria.pdf'],
+      ['pedro.martinez@example.com', 'Pedro Martinez', 'contrato_pedro.pdf']
+    ]
+  };
+}
+
+function downloadTemplate(format) {
+  const { headers, rows } = getTemplateSampleData();
+  const fileName = `plantilla_${operationType}`;
+
+  if (format === 'csv') {
+    const lines = [headers.join(',')];
+    rows.forEach(r => lines.push(r.join(',')));
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    downloadBlob(blob, `${fileName}.csv`);
+  }
+
+  else if (format === 'json') {
+    const data = rows.map(r => {
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = r[i]; });
+      return obj;
+    });
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+    downloadBlob(blob, `${fileName}.json`);
+  }
+
+  else if (format === 'xlsx') {
+    const wsData = [headers, ...rows];
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    // Auto-size columns
+    ws['!cols'] = headers.map((h, i) => {
+      const maxLen = Math.max(h.length, ...rows.map(r => (r[i] || '').length));
+      return { wch: maxLen + 2 };
+    });
+    XLSX.utils.book_append_sheet(wb, ws, 'Datos');
+    XLSX.writeFile(wb, `${fileName}.xlsx`);
+  }
+}
+
+function downloadBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
 }
 
 /* ===== UTILS ===== */

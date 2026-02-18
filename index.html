@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Signaturit Sender</title>
+  <title>Multi Send Signaturit</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%2300B4B6'/><text x='50' y='68' font-size='60' font-weight='800' fill='white' text-anchor='middle' font-family='Arial'>S</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%2300B4B6'/><text x='50' y='68' font-size='42' font-weight='800' fill='white' text-anchor='middle' font-family='Arial'>MS</text></svg>">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
@@ -16,76 +16,45 @@
 <div class="launcher-overlay" id="launcherOverlay">
   <div class="launcher">
     <div class="launcher-header">
-      <div class="launcher-logo">S</div>
-      <h2>Signaturit Sender</h2>
+      <div class="launcher-logo">MS</div>
+      <h2>Multi Send Signaturit</h2>
       <p>Selecciona el tipo de solicitud</p>
     </div>
 
-    <!-- Step 1: Type -->
-    <div class="launcher-step active" id="launcherStep1">
-      <div class="launcher-label">Tipo de solicitud</div>
-      <div class="launcher-options">
-        <div class="launcher-option" data-type="advanced" onclick="selectOperationType(this)">
-          <div class="launcher-option-icon sig">✍️</div>
-          <div class="launcher-option-text">
-            <h4>Firma avanzada</h4>
-            <p>Biométrica o con certificado digital</p>
-          </div>
-        </div>
-        <div class="launcher-option" data-type="simple" onclick="selectOperationType(this)">
-          <div class="launcher-option-icon sig" style="background:rgba(0,180,182,.08)">☑️</div>
-          <div class="launcher-option-text">
-            <h4>Firma simple</h4>
-            <p>Firma con un clic</p>
-          </div>
-        </div>
-        <div class="launcher-option" data-type="email" onclick="selectOperationType(this)">
-          <div class="launcher-option-icon email">📧</div>
-          <div class="launcher-option-text">
-            <h4>Email certificado</h4>
-            <p>Certifica tus comunicaciones</p>
-          </div>
-        </div>
-        <div class="launcher-option" data-type="sms" onclick="selectOperationType(this)">
-          <div class="launcher-option-icon sms">💬</div>
-          <div class="launcher-option-text">
-            <h4>SMS certificado</h4>
-            <p>Certifica tus mensajes SMS</p>
-          </div>
+    <div class="launcher-label">Tipo de solicitud</div>
+    <div class="launcher-options">
+      <div class="launcher-option" data-type="advanced" onclick="selectOperationType(this)">
+        <div class="launcher-option-icon sig">✍️</div>
+        <div class="launcher-option-text">
+          <h4>Firma avanzada</h4>
+          <p>Biométrica o con certificado digital</p>
         </div>
       </div>
-      <div class="launcher-actions">
-        <div class="launcher-dots"><div class="launcher-dot active"></div><div class="launcher-dot"></div></div>
-        <button class="btn btn-primary" id="launcherNext1" disabled onclick="goLauncherStep(2)">Siguiente →</button>
+      <div class="launcher-option" data-type="simple" onclick="selectOperationType(this)">
+        <div class="launcher-option-icon sig" style="background:rgba(0,180,182,.08)">☑️</div>
+        <div class="launcher-option-text">
+          <h4>Firma simple</h4>
+          <p>Firma con un clic</p>
+        </div>
+      </div>
+      <div class="launcher-option" data-type="email" onclick="selectOperationType(this)">
+        <div class="launcher-option-icon email">📧</div>
+        <div class="launcher-option-text">
+          <h4>Email certificado</h4>
+          <p>Certifica tus comunicaciones</p>
+        </div>
+      </div>
+      <div class="launcher-option" data-type="sms" onclick="selectOperationType(this)">
+        <div class="launcher-option-icon sms">💬</div>
+        <div class="launcher-option-text">
+          <h4>SMS certificado</h4>
+          <p>Certifica tus mensajes SMS</p>
+        </div>
       </div>
     </div>
-
-    <!-- Step 2: Mode -->
-    <div class="launcher-step" id="launcherStep2">
-      <div class="launcher-label">¿Cómo quieres enviar?</div>
-      <div class="launcher-options">
-        <div class="launcher-option" data-mode="individual" onclick="selectSendMode(this)">
-          <div class="launcher-option-icon single">👤</div>
-          <div class="launcher-option-text">
-            <h4>Envío individual</h4>
-            <p>Un destinatario, configura todo manualmente</p>
-          </div>
-        </div>
-        <div class="launcher-option" data-mode="bulk" onclick="selectSendMode(this)">
-          <div class="launcher-option-icon bulk">👥</div>
-          <div class="launcher-option-text">
-            <h4>Envío masivo</h4>
-            <p>Múltiples destinatarios desde archivo de datos</p>
-          </div>
-        </div>
-      </div>
-      <div class="launcher-actions">
-        <div class="launcher-dots"><div class="launcher-dot"></div><div class="launcher-dot active"></div></div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-secondary" onclick="goLauncherStep(1)">← Atrás</button>
-          <button class="btn btn-primary" id="launcherStart" disabled onclick="startApp()">Comenzar</button>
-        </div>
-      </div>
+    <div class="launcher-actions">
+      <div></div>
+      <button class="btn btn-primary" id="launcherStart" disabled onclick="startApp()">Comenzar</button>
     </div>
   </div>
 </div>
@@ -94,117 +63,17 @@
 <div class="app-wrapper" id="appWrapper">
   <header class="header">
     <div class="header-left">
-      <div class="logo-icon">S</div>
-      <h1>Signaturit <span>Sender</span></h1>
+      <div class="logo-icon">MS</div>
+      <h1>Multi Send <span>Signaturit</span></h1>
     </div>
     <div class="header-badges">
       <span class="header-badge mode-tag" id="badgeOperation"></span>
-      <span class="header-badge" id="badgeMode"></span>
-      <button class="btn-change-mode" onclick="resetLauncher()">← Cambiar modo</button>
+      <button class="btn-change-mode" onclick="resetLauncher()">← Cambiar tipo</button>
     </div>
   </header>
 
-  <!-- ===== INDIVIDUAL MODE ===== -->
-  <div id="individualMode" style="display:none">
-    <div class="main">
-      <h2 class="section-title" id="individualTitle"></h2>
-      <p class="section-desc" id="individualDesc"></p>
-
-      <div class="config-grid">
-        <div class="config-card">
-          <label>Entorno <span class="req">*</span></label>
-          <select id="ind-env">
-            <option value="https://api.signaturit.com">Producción</option>
-            <option value="https://api.sandbox.signaturit.com">Sandbox</option>
-          </select>
-        </div>
-        <div class="config-card">
-          <label>Token API <span class="req">*</span></label>
-          <input type="password" id="ind-token" placeholder="Pega tu token aquí">
-        </div>
-      </div>
-
-      <!-- Plantilla toggle -->
-      <div class="config-card config-full" id="ind-tpl-section" style="margin-bottom:14px">
-        <div class="field-toggle">
-          <label>Usar plantilla</label>
-          <label class="toggle-switch"><input type="checkbox" id="ind-tpl-toggle" onchange="toggleIndTemplate()"><span class="toggle-slider"></span></label>
-        </div>
-        <div id="ind-tpl-picker" style="display:none;margin-top:8px">
-          <div style="display:flex;gap:8px">
-            <select id="ind-tpl-select" style="flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:var(--surface-2)"><option value="">— Carga las plantillas primero —</option></select>
-            <button class="btn btn-outline btn-small" onclick="fetchTemplates('ind')">🔄 Cargar</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Multi-signer section (advanced) -->
-      <div class="signers-section" id="ind-signers-section" style="display:none">
-        <h4>Firmantes</h4>
-        <div id="ind-signers-list"></div>
-        <button class="btn-add" onclick="addIndSigner()">+ Añadir firmante</button>
-      </div>
-
-      <!-- Single recipient (non-advanced) -->
-      <div id="ind-single-recipient">
-        <div class="config-grid">
-          <div class="config-card">
-            <label>Email destinatario <span class="req">*</span></label>
-            <input type="email" id="ind-email" placeholder="destinatario@email.com">
-          </div>
-          <div class="config-card">
-            <label>Nombre destinatario</label>
-            <input type="text" id="ind-name" placeholder="Nombre completo">
-          </div>
-        </div>
-      </div>
-
-      <!-- Subject/Body/Branding -->
-      <div class="config-card config-full" style="margin-bottom:14px">
-        <div class="field-toggle"><label>Asunto</label><label class="toggle-switch"><input type="checkbox" id="ind-subject-toggle"><span class="toggle-slider"></span></label></div>
-        <input type="text" id="ind-subject" placeholder="Asunto del email" disabled>
-      </div>
-      <div class="config-card config-full" style="margin-bottom:14px">
-        <div class="field-toggle"><label>Cuerpo del email</label><label class="toggle-switch"><input type="checkbox" id="ind-body-toggle"><span class="toggle-slider"></span></label></div>
-        <textarea id="ind-body" rows="3" placeholder="Cuerpo del mensaje..." disabled></textarea>
-      </div>
-      <div class="config-card config-full" style="margin-bottom:14px">
-        <div class="field-toggle"><label>Branding ID</label><label class="toggle-switch"><input type="checkbox" id="ind-branding-toggle"><span class="toggle-slider"></span></label></div>
-        <input type="text" id="ind-branding" placeholder="ID del branding" disabled>
-      </div>
-
-      <!-- SMS fields -->
-      <div id="ind-sms-fields" style="display:none">
-        <div class="config-card config-full" style="margin-bottom:14px">
-          <label>Teléfono <span class="req">*</span></label>
-          <input type="text" id="ind-phone" placeholder="+34600000000">
-        </div>
-        <div class="config-card config-full" style="margin-bottom:14px">
-          <label>Cuerpo del SMS <span class="req">*</span></label>
-          <textarea id="ind-sms-body" rows="3" placeholder="Texto del SMS certificado..."></textarea>
-        </div>
-      </div>
-
-      <!-- File upload -->
-      <div id="ind-file-section">
-        <div class="drop-zone" id="indDropZone" onclick="document.getElementById('indFileInput').click()">
-          <div class="drop-icon">📄</div>
-          <div class="drop-text">Arrastra un PDF o haz clic para seleccionar</div>
-          <div class="drop-hint">Máximo 5 MB</div>
-        </div>
-        <input type="file" id="indFileInput" accept=".pdf" style="display:none">
-      </div>
-
-      <div class="actions">
-        <div></div>
-        <button class="btn btn-success" onclick="sendIndividual()">🚀 Enviar</button>
-      </div>
-      <div class="log-area" id="indLog" style="display:none"></div>
-    </div>
-  </div>
-
   <!-- ===== BULK MODE ===== -->
-  <div id="bulkMode" style="display:none">
+  <div id="bulkMode">
     <div class="steps-bar">
       <div class="step-item active" onclick="goToStep(1)"><div class="step-num">1</div><span class="step-label">Configuración</span></div>
       <div class="step-connector"></div>
@@ -234,7 +103,7 @@
           <div id="bulk-tpl-picker" style="display:none;margin-top:8px">
             <div style="display:flex;gap:8px">
               <select id="bulk-tpl-select" style="flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:var(--surface-2)"><option value="">— Carga las plantillas primero —</option></select>
-              <button class="btn btn-outline btn-small" onclick="fetchTemplates('bulk')">🔄 Cargar</button>
+              <button class="btn btn-outline btn-small" onclick="fetchTemplates()">🔄 Cargar</button>
             </div>
           </div>
         </div>
@@ -300,6 +169,14 @@
           <div class="files-sidebar" id="filesSidebar">
             <h4>📖 Columnas esperadas</h4>
             <div id="colDescriptions"></div>
+            <div class="template-downloads">
+              <h4>📥 Descargar plantilla</h4>
+              <div class="template-btns">
+                <button class="btn btn-outline btn-small" onclick="downloadTemplate('csv')">CSV</button>
+                <button class="btn btn-outline btn-small" onclick="downloadTemplate('json')">JSON</button>
+                <button class="btn btn-outline btn-small" onclick="downloadTemplate('xlsx')">XLSX</button>
+              </div>
+            </div>
           </div>
         </div>
 

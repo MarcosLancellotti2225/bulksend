@@ -1,0 +1,26 @@
+{
+  "name": "bulksend",
+  "version": "1.0.0",
+  "description": "bulk send automation + files",
+  "main": "app.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MarcosLancellotti2225/bulksend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/MarcosLancellotti2225/bulksend/issues"
+  },
+  "homepage": "https://github.com/MarcosLancellotti2225/bulksend#readme",
+  "devDependencies": {
+    "vite": "^7.3.1"
+  }
+}
