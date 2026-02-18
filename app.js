@@ -124,7 +124,7 @@ async function fetchTemplates(prefix) {
   try {
     const resp = await fetch(PROXY_URL, {
       method: 'POST',
-      headers: { 'x-signaturit-token': token, 'x-api-url': env + '/v4/templates', 'x-method-override': 'GET', 'Content-Type': 'application/json' },
+      headers: { 'x-signaturit-token': token, 'x-api-url': env + '/v3/templates.json', 'x-method-override': 'GET', 'Content-Type': 'application/json' },
       body: JSON.stringify({})
     });
     const data = await resp.json();
