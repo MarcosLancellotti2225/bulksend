@@ -700,6 +700,10 @@ td {
 }
 .delay-config span { font-size: 11px; color: var(--text-dim); }
 
+#cfg-proxy{
+   display:none;
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
   .config-grid, .mapping-grid { grid-template-columns: 1fr; }
