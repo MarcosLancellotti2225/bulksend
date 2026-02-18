@@ -637,10 +637,25 @@ async function startBulkSend() {
   document.getElementById('btnStop').style.display = 'inline-flex';
   document.getElementById('progressArea').style.display = 'block';
   const logEl = document.getElementById('logArea');
-  logEl.style.display = 'block'; logEl.innerHTML = '';
+  logEl.style.display = 'block';
+  logEl.innerHTML = `<div class="log-header"><span class="log-header-title">Log de envío</span><div class="log-header-stats" id="logLiveStats"></div></div><div class="log-body" id="logBody"></div>`;
+  const logBody = document.getElementById('logBody');
 
-  const log = (msg, cls) => { logEl.innerHTML += `<div class="log-line ${cls||''}">[${new Date().toLocaleTimeString()}] ${msg}</div>`; logEl.scrollTop = logEl.scrollHeight; };
-  log(`🚀 Iniciando ${validItems.length} envío(s) de ${OPERATION_LABELS[operationType]}...`, 'info');
+  const startTime = Date.now();
+  const ts = () => new Date().toLocaleTimeString();
+
+  const log = (msg, badge, cls) => {
+    logBody.innerHTML += `<div class="log-line ${cls||''}"><span class="log-time">${ts()}</span><span class="log-badge ${badge}">${badge === 'send' ? 'SEND' : badge === 'ok' ? 'OK' : badge === 'err' ? 'ERR' : badge === 'stop' ? 'STOP' : badge === 'done' ? 'FIN' : 'SYS'}</span><span class="log-msg">${msg}</span></div>`;
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  const updateLiveStats = () => {
+    document.getElementById('logLiveStats').innerHTML =
+      `<span class="log-stat ok">${ok} ok</span><span class="log-stat fail">${err} err</span>`;
+  };
+
+  const envLabel = env.includes('sandbox') ? 'Sandbox' : 'Producción';
+  log(`Iniciando ${validItems.length} envío(s) de <strong>${OPERATION_LABELS[operationType]}</strong> en ${envLabel}`, 'sys', 'dim');
 
   const subj = preSubj;
   const body = preBody;
@@ -651,7 +666,7 @@ async function startBulkSend() {
   let ok = 0, err = 0;
 
   for (let i = 0; i < validItems.length; i++) {
-    if (!sending) { log('⏹ Detenido por el usuario', 'error'); break; }
+    if (!sending) { log('Detenido por el usuario', 'stop', 'error'); break; }
 
     const item = validItems[i];
     const pct = Math.round(((i + 1) / validItems.length) * 100);
@@ -660,51 +675,69 @@ async function startBulkSend() {
     document.getElementById('progressPct').textContent = pct + '%';
 
     const fd = new FormData();
+    const dest = isSMS ? item.phone : item.email;
+    const destName = item.name || '';
+    const destLabel = destName ? `${destName} &lt;${dest}&gt;` : dest;
 
     if (isSMS) {
       fd.append('recipients[0][phone]', item.phone);
       if (item.name) fd.append('recipients[0][name]', item.name);
       fd.append('body', resolveVars(smsBody, item));
-      log(`📤 [${i+1}/${validItems.length}] SMS → ${item.phone}`, 'info');
     } else {
-      // All signers
       item.signers.forEach((s, si) => {
         fd.append(`recipients[${si}][name]`, s.name || s.email.split('@')[0]);
         fd.append(`recipients[${si}][email]`, s.email);
       });
-
       if (operationType === 'advanced') fd.append('type', 'advanced');
-
       if (useTemplate && tplId) {
         fd.append('templates[0]', tplId);
       } else if (item.fileName && pdfFiles[item.fileName.toLowerCase()]) {
         fd.append('files[0]', pdfFiles[item.fileName.toLowerCase()].file, item.fileName);
       }
-
       const rs = resolveVars(subj, item);
       const rb = resolveVars(body, item);
       if (rs) fd.append('subject', rs);
       if (rb) fd.append('body', rb);
       if (brand) fd.append('branding_id', brand);
-
-      const extra = item.signers.length > 1 ? ` (${item.signers.length} firmantes)` : '';
-      log(`📤 [${i+1}/${validItems.length}] → ${item.email}${extra}`, 'info');
     }
 
+    const extra = !isSMS && item.signers.length > 1 ? ` — ${item.signers.length} firmantes` : '';
+    const fileInfo = !isSMS && item.fileName ? ` — ${item.fileName}` : '';
+    log(`[${i+1}/${validItems.length}] ${destLabel}${extra}${fileInfo}`, 'send', 'info');
+
+    const t0 = Date.now();
     try {
       const resp = await fetch(PROXY_URL, { method: 'POST', headers: { 'x-signaturit-token': token, 'x-api-url': apiUrl }, body: fd });
       const data = await resp.json();
-      if (resp.ok && data.id) { ok++; log(`✅ ${isSMS ? item.phone : item.email} — ID: ${data.id}`, 'success'); sendLog.push({ ...item, status: 'ok', id: data.id }); }
-      else { err++; const m = data.message || data.error || JSON.stringify(data); log(`❌ ${isSMS ? item.phone : item.email} — ${m}`, 'error'); sendLog.push({ ...item, status: 'error', error: m }); }
-    } catch (e) { err++; log(`❌ ${isSMS ? item.phone : item.email} — ${e.message}`, 'error'); sendLog.push({ ...item, status: 'error', error: e.message }); }
+      const elapsed = Date.now() - t0;
+      if (resp.ok && data.id) {
+        ok++;
+        log(`${destLabel} <span class="log-id">ID: ${data.id}</span> <span class="log-detail">${elapsed}ms</span>`, 'ok', 'success');
+        sendLog.push({ ...item, status: 'ok', id: data.id });
+      } else {
+        err++;
+        const m = data.message || data.error || JSON.stringify(data);
+        log(`${destLabel} — ${m} <span class="log-detail">${elapsed}ms</span>`, 'err', 'error');
+        sendLog.push({ ...item, status: 'error', error: m });
+      }
+    } catch (e) {
+      err++;
+      log(`${destLabel} — ${e.message}`, 'err', 'error');
+      sendLog.push({ ...item, status: 'error', error: e.message });
+    }
 
+    updateLiveStats();
     if (i < validItems.length - 1 && sending) await sleep(delay * 1000);
   }
 
   sending = false;
   document.getElementById('btnSend').disabled = false;
   document.getElementById('btnStop').style.display = 'none';
-  log(`\n🏁 Completado: ${ok} ✅ — ${err} ❌`, ok === validItems.length ? 'success' : 'error');
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  const rate = validItems.length > 0 ? ((ok / validItems.length) * 100).toFixed(0) : 0;
+  log(`Completado en ${elapsed}s — ${ok} enviados, ${err} errores — Tasa de éxito: ${rate}%`, 'done', 'summary');
+  updateLiveStats();
   renderResults(isSMS);
 }
 
