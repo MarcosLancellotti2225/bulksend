@@ -31,6 +31,7 @@ let activeTextField = null;
 let templatesList = [];
 let useTemplate = false;
 let bulkSignerCount = 1;
+let templateVarMappings = []; // [{widgetName: 'campo1', column: 'columna_excel'}]
 
 const OFFICIAL_VARIABLES = [
   { name: 'signer_name', desc: 'Nombre del firmante', category: 'firmante' },
@@ -73,7 +74,7 @@ function resetLauncher() {
   dataRows = []; dataHeaders = []; pdfFiles = {};
   matchedData = []; sendLog = []; sending = false;
   templatesList = []; useTemplate = false;
-  bulkSignerCount = 1;
+  bulkSignerCount = 1; templateVarMappings = [];
 
   document.getElementById('appWrapper').classList.remove('active');
   document.getElementById('launcherOverlay').classList.remove('hidden');
@@ -137,6 +138,8 @@ function setupBulkMode() {
 function toggleBulkTemplate() {
   useTemplate = document.getElementById('bulk-tpl-toggle').checked;
   document.getElementById('bulk-tpl-picker').style.display = useTemplate ? 'block' : 'none';
+  if (!useTemplate) templateVarMappings = [];
+  renderColumnDescriptions();
 }
 
 function renderColumnDescriptions() {
@@ -160,6 +163,11 @@ function renderColumnDescriptions() {
       cols.push(
         { name: 'email_2, email_3...', info: 'Emails de firmantes adicionales', req: false },
         { name: 'name_2, name_3...', info: 'Nombres de firmantes adicionales', req: false }
+      );
+    }
+    if (useTemplate) {
+      cols.push(
+        { name: 'variables de plantilla', info: 'Columnas adicionales con valores para los widgets de la plantilla (se mapean en el paso 3)', req: false }
       );
     }
   }
@@ -416,7 +424,18 @@ function buildMapping() {
     }
   }
 
+  // Template variable mappings (when using a template)
+  if (useTemplate && !isSMS) {
+    html += buildTemplateVarSection();
+  }
+
   area.innerHTML = html;
+
+  // Restore template var mapping values
+  if (useTemplate && !isSMS) {
+    restoreTemplateVarMappings();
+  }
+
   updatePreview();
 }
 
@@ -437,6 +456,87 @@ function removeBulkSigner(n) {
   if (bulkSignerCount <= 1) return;
   bulkSignerCount--;
   buildMapping();
+}
+
+/* ===== TEMPLATE VARIABLE MAPPINGS ===== */
+
+function buildTemplateVarSection() {
+  const colOpts = ['<option value="">— Sin asignar —</option>']
+    .concat(dataHeaders.map(h => `<option value="${h}">${h}</option>`)).join('');
+
+  let html = `<div class="mapping-group template-var-group">
+    <div class="mapping-group-title"><span>Variables de plantilla</span></div>
+    <p class="tpl-var-desc">Asigna columnas del archivo a campos/widgets de la plantilla de Signaturit. El nombre del widget debe coincidir exactamente con el definido en la plantilla.</p>
+    <div id="tplVarMappingsContainer">`;
+
+  if (templateVarMappings.length === 0) {
+    templateVarMappings.push({ widgetName: '', column: '' });
+  }
+
+  templateVarMappings.forEach((m, i) => {
+    html += buildTemplateVarRow(i, colOpts);
+  });
+
+  html += `</div>
+    <div style="margin-top:10px"><button class="btn-add" onclick="addTemplateVarMapping()">+ Agregar variable</button></div>
+  </div>`;
+  return html;
+}
+
+function buildTemplateVarRow(index, colOpts) {
+  return `<div class="tpl-var-row" id="tplVarRow-${index}">
+    <input type="text" class="tpl-var-name" id="tplVarName-${index}" placeholder="Nombre del widget" value="${esc(templateVarMappings[index]?.widgetName || '')}" onchange="updateTemplateVarMapping(${index})">
+    <select id="tplVarCol-${index}" onchange="updateTemplateVarMapping(${index})">${colOpts}</select>
+    <button class="btn-remove-signer" onclick="removeTemplateVarMapping(${index})" title="Eliminar">×</button>
+  </div>`;
+}
+
+function restoreTemplateVarMappings() {
+  templateVarMappings.forEach((m, i) => {
+    const nameEl = document.getElementById(`tplVarName-${i}`);
+    const colEl = document.getElementById(`tplVarCol-${i}`);
+    if (nameEl) nameEl.value = m.widgetName || '';
+    if (colEl) colEl.value = m.column || '';
+  });
+}
+
+function addTemplateVarMapping() {
+  // Save current values first
+  saveCurrentTemplateVarValues();
+  templateVarMappings.push({ widgetName: '', column: '' });
+  buildMapping();
+}
+
+function removeTemplateVarMapping(index) {
+  saveCurrentTemplateVarValues();
+  if (templateVarMappings.length <= 1) {
+    templateVarMappings = [{ widgetName: '', column: '' }];
+  } else {
+    templateVarMappings.splice(index, 1);
+  }
+  buildMapping();
+}
+
+function updateTemplateVarMapping(index) {
+  const nameEl = document.getElementById(`tplVarName-${index}`);
+  const colEl = document.getElementById(`tplVarCol-${index}`);
+  if (nameEl && colEl) {
+    templateVarMappings[index] = { widgetName: nameEl.value.trim(), column: colEl.value };
+  }
+}
+
+function saveCurrentTemplateVarValues() {
+  templateVarMappings.forEach((m, i) => {
+    const nameEl = document.getElementById(`tplVarName-${i}`);
+    const colEl = document.getElementById(`tplVarCol-${i}`);
+    if (nameEl) m.widgetName = nameEl.value.trim();
+    if (colEl) m.column = colEl.value;
+  });
+}
+
+function getActiveTemplateVarMappings() {
+  saveCurrentTemplateVarValues();
+  return templateVarMappings.filter(m => m.widgetName && m.column);
 }
 
 function autoMatch(key, header) {
@@ -533,12 +633,15 @@ function renderPreviewTable() {
   } else {
     const signersCol = isAdvanced ? '<th>Firmantes</th>' : '';
     const fileCol = hasPDFs ? '<th>Archivo</th><th>Tamaño</th>' : '';
-    document.getElementById('previewHead').innerHTML = `<tr><th>#</th><th>Estado</th><th>Email</th><th>Nombre</th>${signersCol}${fileCol}</tr>`;
+    const tplVars = useTemplate ? getActiveTemplateVarMappings() : [];
+    const tplVarHeaders = tplVars.map(v => `<th>${esc(v.widgetName)}</th>`).join('');
+    document.getElementById('previewHead').innerHTML = `<tr><th>#</th><th>Estado</th><th>Email</th><th>Nombre</th>${signersCol}${fileCol}${tplVarHeaders}</tr>`;
     document.getElementById('previewBody').innerHTML = matchedData.map((d, i) => {
       const ok = d.email && d.fileMatch;
       const sigTd = isAdvanced ? `<td>${d.signers.length} firmante(s)</td>` : '';
       const fileTd = hasPDFs ? `<td>${d.fileName||'—'}</td><td class="${d.fileSize>5e6?'size-over':d.fileSize>3e6?'size-warn':'size-ok'}">${d.fileSize?formatSize(d.fileSize):'—'}</td>` : '';
-      return `<tr><td>${i+1}</td><td><span class="status-dot ${ok?'matched':'missing'}"></span>${ok?'OK':'Falta'}</td><td>${d.email||'—'}</td><td>${d.name||'—'}</td>${sigTd}${fileTd}</tr>`;
+      const tplVarTds = tplVars.map(v => `<td>${esc(d.rawRow[v.column] || '—')}</td>`).join('');
+      return `<tr><td>${i+1}</td><td><span class="status-dot ${ok?'matched':'missing'}"></span>${ok?'OK':'Falta'}</td><td>${d.email||'—'}</td><td>${d.name||'—'}</td>${sigTd}${fileTd}${tplVarTds}</tr>`;
     }).join('');
   }
 }
@@ -557,6 +660,10 @@ function buildSummary() {
   if (useTemplate) {
     const sel = document.getElementById('bulk-tpl-select');
     html += `<span>Plantilla:</span><code>${sel?.options[sel.selectedIndex]?.text || '—'}</code>`;
+    const tplVars = getActiveTemplateVarMappings();
+    if (tplVars.length) {
+      html += `<span>Variables de plantilla:</span><code>${tplVars.map(v => v.widgetName + ' ← ' + v.column).join(', ')}</code>`;
+    }
   }
 
   if (!isSMS) {
@@ -691,6 +798,12 @@ async function startBulkSend() {
       if (operationType === 'advanced') fd.append('type', 'advanced');
       if (useTemplate && tplId) {
         fd.append('templates[0]', tplId);
+        // Append template variable data from mapped columns
+        const tplVars = getActiveTemplateVarMappings();
+        tplVars.forEach(tv => {
+          const val = item.rawRow[tv.column] || '';
+          fd.append(`data[${tv.widgetName}]`, resolveVars(val, item));
+        });
       } else if (item.fileName && pdfFiles[item.fileName.toLowerCase()]) {
         fd.append('files[0]', pdfFiles[item.fileName.toLowerCase()].file, item.fileName);
       }
@@ -786,7 +899,7 @@ function getTemplateSampleData() {
   }
 
   if (isAdvanced) {
-    return {
+    const data = {
       headers: ['email', 'name', 'email_2', 'name_2', 'file'],
       rows: [
         ['joe.doe@example.com', 'Joe Doe', 'jane.smith@example.com', 'Jane Smith', 'contrato_joe.pdf'],
@@ -796,10 +909,12 @@ function getTemplateSampleData() {
         ['elena.moreno@example.com', 'Elena Moreno', 'david.jimenez@example.com', 'David Jimenez', 'contrato_elena.pdf']
       ]
     };
+    if (useTemplate) addTemplateSampleCols(data);
+    return data;
   }
 
   // simple / email
-  return {
+  const data = {
     headers: ['email', 'name', 'file'],
     rows: [
       ['joe.doe@example.com', 'Joe Doe', 'contrato_joe.pdf'],
@@ -809,6 +924,20 @@ function getTemplateSampleData() {
       ['pedro.martinez@example.com', 'Pedro Martinez', 'contrato_pedro.pdf']
     ]
   };
+  if (useTemplate) addTemplateSampleCols(data);
+  return data;
+}
+
+function addTemplateSampleCols(data) {
+  data.headers.push('campo_plantilla_1', 'campo_plantilla_2');
+  const sampleVals = [
+    ['Valor A1', 'Valor B1'],
+    ['Valor A2', 'Valor B2'],
+    ['Valor A3', 'Valor B3'],
+    ['Valor A4', 'Valor B4'],
+    ['Valor A5', 'Valor B5']
+  ];
+  data.rows.forEach((r, i) => { r.push(...(sampleVals[i] || ['', ''])); });
 }
 
 function downloadTemplate(format) {
