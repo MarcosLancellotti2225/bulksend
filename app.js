@@ -498,8 +498,8 @@ function buildMapping() {
     }
   }
 
-  // Template variable mappings (when using a template)
-  const showTplVars = useTemplate && !isSMS && (useTemplateVars || templateVarMappings.some(m => m.widgetName));
+  // Template variable mappings (always show when using a template)
+  const showTplVars = useTemplate && !isSMS;
   if (showTplVars) {
     html += buildTemplateVarSection();
   }
@@ -537,10 +537,8 @@ function removeBulkSigner(n) {
 
 function buildTemplateVarSection() {
   // If we have detected variables from Word, show them as fixed rows
-  // Otherwise show manual entry rows
-  const hasDetected = detectedVariables.length > 0 && useTemplateVars;
-
-  if (hasDetected) {
+  // Otherwise show manual entry rows for widget names
+  if (detectedVariables.length > 0 && useTemplateVars) {
     return buildDetectedVarMappingSection();
   }
   return buildManualVarMappingSection();
