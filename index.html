@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="styles.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%2300B4B6'/><text x='50' y='68' font-size='42' font-weight='800' fill='white' text-anchor='middle' font-family='Arial'>MS</text></svg>">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 </head>
 <body>
 
@@ -105,6 +106,21 @@
               <select id="bulk-tpl-select" style="flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:var(--surface-2)"><option value="">— Carga las plantillas primero —</option></select>
               <button class="btn btn-outline btn-small" onclick="fetchTemplates()">🔄 Cargar</button>
             </div>
+            <!-- Word upload for variable extraction -->
+            <div class="word-upload-section" id="wordUploadSection" style="margin-top:12px">
+              <div class="field-toggle" style="margin-bottom:6px">
+                <label>Usar variables de plantilla</label>
+                <label class="toggle-switch"><input type="checkbox" id="toggle-tpl-vars" onchange="toggleTemplateVars()"><span class="toggle-slider"></span></label>
+              </div>
+              <div id="wordUploadArea" style="display:none">
+                <div class="word-drop-zone" id="wordDropZone" onclick="document.getElementById('wordInput').click()">
+                  <span class="word-drop-icon">📄</span>
+                  <span class="word-drop-text">Subir Word de referencia (.docx)</span>
+                </div>
+                <input type="file" id="wordInput" accept=".docx" style="display:none" onchange="handleWordUpload(this.files)">
+                <div id="detectedVarsContainer" style="display:none"></div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -116,6 +132,10 @@
           <div class="config-card">
             <div class="field-toggle"><label>Branding ID</label><label class="toggle-switch"><input type="checkbox" id="toggle-branding" onchange="toggleField('cfg-branding',this)"><span class="toggle-slider"></span></label></div>
             <input type="text" id="cfg-branding" placeholder="ID del branding" disabled>
+          </div>
+          <div class="config-card">
+            <div class="field-toggle"><label>Reply-To</label><label class="toggle-switch"><input type="checkbox" id="toggle-replyto" onchange="toggleField('cfg-replyto',this)"><span class="toggle-slider"></span></label></div>
+            <input type="email" id="cfg-replyto" placeholder="respuestas@empresa.com" disabled>
           </div>
           <div class="config-card config-full">
             <div class="field-toggle"><label>Cuerpo del email</label><label class="toggle-switch"><input type="checkbox" id="toggle-body" onchange="toggleField('cfg-body',this)"><span class="toggle-slider"></span></label></div>

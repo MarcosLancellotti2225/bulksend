@@ -31,6 +31,9 @@ let activeTextField = null;
 let templatesList = [];
 let useTemplate = false;
 let bulkSignerCount = 1;
+let templateVarMappings = []; // [{widgetName: 'campo1', column: 'columna_excel'}]
+let detectedVariables = [];    // ['company_name', 'insert alias', ...]
+let useTemplateVars = false;
 
 const OFFICIAL_VARIABLES = [
   { name: 'signer_name', desc: 'Nombre del firmante', category: 'firmante' },
@@ -73,7 +76,8 @@ function resetLauncher() {
   dataRows = []; dataHeaders = []; pdfFiles = {};
   matchedData = []; sendLog = []; sending = false;
   templatesList = []; useTemplate = false;
-  bulkSignerCount = 1;
+  bulkSignerCount = 1; templateVarMappings = [];
+  detectedVariables = []; useTemplateVars = false;
 
   document.getElementById('appWrapper').classList.remove('active');
   document.getElementById('launcherOverlay').classList.remove('hidden');
@@ -137,6 +141,79 @@ function setupBulkMode() {
 function toggleBulkTemplate() {
   useTemplate = document.getElementById('bulk-tpl-toggle').checked;
   document.getElementById('bulk-tpl-picker').style.display = useTemplate ? 'block' : 'none';
+  if (!useTemplate) {
+    templateVarMappings = [];
+    detectedVariables = [];
+    useTemplateVars = false;
+  }
+  renderColumnDescriptions();
+}
+
+function toggleTemplateVars() {
+  useTemplateVars = document.getElementById('toggle-tpl-vars').checked;
+  document.getElementById('wordUploadArea').style.display = useTemplateVars ? 'block' : 'none';
+  if (!useTemplateVars) {
+    detectedVariables = [];
+    templateVarMappings = [];
+    const container = document.getElementById('detectedVarsContainer');
+    if (container) container.style.display = 'none';
+    // Reset word drop zone
+    const zone = document.getElementById('wordDropZone');
+    if (zone) {
+      zone.classList.remove('has-file');
+      zone.innerHTML = '<span class="word-drop-icon">📄</span><span class="word-drop-text">Subir Word de referencia (.docx)</span>';
+    }
+  }
+}
+
+/* ===== WORD PARSING (mammoth.js) ===== */
+
+async function handleWordUpload(files) {
+  if (!files || !files.length) return;
+  const file = files[0];
+  if (!file.name.toLowerCase().endsWith('.docx')) {
+    alert('Solo se aceptan archivos .docx');
+    return;
+  }
+
+  const zone = document.getElementById('wordDropZone');
+  zone.innerHTML = '<span class="word-drop-text">Procesando...</span>';
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    const text = result.value;
+    const matches = [...text.matchAll(/\{\{([^}]+)\}\}/g)];
+    const unique = [...new Set(matches.map(m => m[1].trim()))];
+
+    detectedVariables = unique;
+    // Initialize mappings from detected variables
+    templateVarMappings = unique.map(v => ({ widgetName: v, column: '' }));
+
+    zone.classList.add('has-file');
+    zone.innerHTML = `<span class="file-info">✅ ${esc(file.name)} — ${unique.length} variable(s) detectada(s)</span>`;
+
+    renderDetectedVariables();
+  } catch (err) {
+    zone.innerHTML = '<span class="word-drop-icon">📄</span><span class="word-drop-text">Subir Word de referencia (.docx)</span>';
+    alert('Error al leer el archivo Word: ' + err.message);
+  }
+}
+
+function renderDetectedVariables() {
+  const container = document.getElementById('detectedVarsContainer');
+  if (!detectedVariables.length) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'block';
+  container.innerHTML = `
+    <div class="detected-vars-box">
+      <div class="detected-vars-header">Variables detectadas en el documento</div>
+      <div class="detected-vars-chips">
+        ${detectedVariables.map(v => `<span class="detected-var-chip">{{${esc(v)}}}</span>`).join('')}
+      </div>
+    </div>`;
 }
 
 function renderColumnDescriptions() {
@@ -160,6 +237,11 @@ function renderColumnDescriptions() {
       cols.push(
         { name: 'email_2, email_3...', info: 'Emails de firmantes adicionales', req: false },
         { name: 'name_2, name_3...', info: 'Nombres de firmantes adicionales', req: false }
+      );
+    }
+    if (useTemplate) {
+      cols.push(
+        { name: 'variables de plantilla', info: 'Columnas adicionales con valores para los widgets de la plantilla (se mapean en el paso 3)', req: false }
       );
     }
   }
@@ -416,7 +498,19 @@ function buildMapping() {
     }
   }
 
+  // Template variable mappings (when using a template)
+  const showTplVars = useTemplate && !isSMS && (useTemplateVars || templateVarMappings.some(m => m.widgetName));
+  if (showTplVars) {
+    html += buildTemplateVarSection();
+  }
+
   area.innerHTML = html;
+
+  // Restore template var mapping values
+  if (showTplVars) {
+    restoreTemplateVarMappings();
+  }
+
   updatePreview();
 }
 
@@ -437,6 +531,168 @@ function removeBulkSigner(n) {
   if (bulkSignerCount <= 1) return;
   bulkSignerCount--;
   buildMapping();
+}
+
+/* ===== TEMPLATE VARIABLE MAPPINGS ===== */
+
+function buildTemplateVarSection() {
+  // If we have detected variables from Word, show them as fixed rows
+  // Otherwise show manual entry rows
+  const hasDetected = detectedVariables.length > 0 && useTemplateVars;
+
+  if (hasDetected) {
+    return buildDetectedVarMappingSection();
+  }
+  return buildManualVarMappingSection();
+}
+
+function buildDetectedVarMappingSection() {
+  const colOpts = ['<option value="">— Sin asignar —</option>']
+    .concat(dataHeaders.map(h => `<option value="${h}">${h}</option>`)).join('');
+
+  // Auto-suggest on first build if no columns assigned yet
+  const needsAutoSuggest = templateVarMappings.every(m => !m.column);
+
+  let html = `<div class="mapping-group template-var-group">
+    <div class="mapping-group-title"><span>Mapeo de variables de plantilla</span><span class="stat-badge">${detectedVariables.length} variables</span></div>
+    <p class="tpl-var-desc">Variables detectadas en el Word. Asigna cada una a la columna correspondiente del archivo de datos.</p>
+    <div id="tplVarMappingsContainer">`;
+
+  templateVarMappings.forEach((m, i) => {
+    const suggested = needsAutoSuggest ? autoSuggestColumn(m.widgetName, dataHeaders) : m.column;
+    if (needsAutoSuggest) m.column = suggested;
+
+    const opts = ['<option value="">— Sin asignar —</option>']
+      .concat(dataHeaders.map(h => `<option value="${h}" ${h === suggested ? 'selected' : ''}>${h}</option>`)).join('');
+
+    html += `<div class="tpl-var-row detected-var-row">
+      <span class="detected-var-chip-label">{{${esc(m.widgetName)}}}</span>
+      <span class="tpl-var-arrow">→</span>
+      <select id="tplVarCol-${i}" onchange="updateTemplateVarMapping(${i})">${opts}</select>
+    </div>`;
+  });
+
+  html += `</div></div>`;
+  return html;
+}
+
+function buildManualVarMappingSection() {
+  const colOpts = ['<option value="">— Sin asignar —</option>']
+    .concat(dataHeaders.map(h => `<option value="${h}">${h}</option>`)).join('');
+
+  let html = `<div class="mapping-group template-var-group">
+    <div class="mapping-group-title"><span>Variables de plantilla</span></div>
+    <p class="tpl-var-desc">Asigna columnas del archivo a campos/widgets de la plantilla de Signaturit. El nombre del widget debe coincidir exactamente con el definido en la plantilla.</p>
+    <div id="tplVarMappingsContainer">`;
+
+  if (templateVarMappings.length === 0) {
+    templateVarMappings.push({ widgetName: '', column: '' });
+  }
+
+  templateVarMappings.forEach((m, i) => {
+    html += `<div class="tpl-var-row" id="tplVarRow-${i}">
+      <input type="text" class="tpl-var-name" id="tplVarName-${i}" placeholder="Nombre del widget" value="${esc(m.widgetName || '')}" onchange="updateTemplateVarMapping(${i})">
+      <select id="tplVarCol-${i}" onchange="updateTemplateVarMapping(${i})">${colOpts}</select>
+      <button class="btn-remove-signer" onclick="removeTemplateVarMapping(${i})" title="Eliminar">×</button>
+    </div>`;
+  });
+
+  html += `</div>
+    <div style="margin-top:10px"><button class="btn-add" onclick="addTemplateVarMapping()">+ Agregar variable</button></div>
+  </div>`;
+  return html;
+}
+
+function restoreTemplateVarMappings() {
+  const hasDetected = detectedVariables.length > 0 && useTemplateVars;
+  templateVarMappings.forEach((m, i) => {
+    if (!hasDetected) {
+      const nameEl = document.getElementById(`tplVarName-${i}`);
+      if (nameEl) nameEl.value = m.widgetName || '';
+    }
+    const colEl = document.getElementById(`tplVarCol-${i}`);
+    if (colEl) colEl.value = m.column || '';
+  });
+}
+
+function addTemplateVarMapping() {
+  saveCurrentTemplateVarValues();
+  templateVarMappings.push({ widgetName: '', column: '' });
+  buildMapping();
+}
+
+function removeTemplateVarMapping(index) {
+  saveCurrentTemplateVarValues();
+  if (templateVarMappings.length <= 1) {
+    templateVarMappings = [{ widgetName: '', column: '' }];
+  } else {
+    templateVarMappings.splice(index, 1);
+  }
+  buildMapping();
+}
+
+function updateTemplateVarMapping(index) {
+  const hasDetected = detectedVariables.length > 0 && useTemplateVars;
+  if (!hasDetected) {
+    const nameEl = document.getElementById(`tplVarName-${index}`);
+    if (nameEl) templateVarMappings[index].widgetName = nameEl.value.trim();
+  }
+  const colEl = document.getElementById(`tplVarCol-${index}`);
+  if (colEl) templateVarMappings[index].column = colEl.value;
+  updatePreview();
+}
+
+function saveCurrentTemplateVarValues() {
+  const hasDetected = detectedVariables.length > 0 && useTemplateVars;
+  templateVarMappings.forEach((m, i) => {
+    if (!hasDetected) {
+      const nameEl = document.getElementById(`tplVarName-${i}`);
+      if (nameEl) m.widgetName = nameEl.value.trim();
+    }
+    const colEl = document.getElementById(`tplVarCol-${i}`);
+    if (colEl) m.column = colEl.value;
+  });
+}
+
+function getActiveTemplateVarMappings() {
+  saveCurrentTemplateVarValues();
+  return templateVarMappings.filter(m => m.widgetName && m.column);
+}
+
+/* ===== AUTO-SUGGEST COLUMN MATCHING ===== */
+
+function autoSuggestColumn(varName, columns) {
+  if (!columns.length) return '';
+  const norm = s => s.toLowerCase().replace(/[_\s-]+/g, ' ').trim();
+  const nVar = norm(varName);
+  const varWords = nVar.split(' ').filter(w => w.length > 2);
+
+  // Exact normalized match
+  for (const col of columns) {
+    if (norm(col) === nVar) return col;
+  }
+
+  // Check if column name is contained in variable or vice versa
+  for (const col of columns) {
+    const nCol = norm(col);
+    if (nCol.includes(nVar) || nVar.includes(nCol)) return col;
+  }
+
+  // Word overlap: find best match by shared significant words
+  let bestCol = '', bestScore = 0;
+  for (const col of columns) {
+    const colWords = norm(col).split(' ').filter(w => w.length > 2);
+    let score = 0;
+    for (const vw of varWords) {
+      for (const cw of colWords) {
+        if (vw === cw) score += 3;
+        else if (cw.includes(vw) || vw.includes(cw)) score += 2;
+      }
+    }
+    if (score > bestScore) { bestScore = score; bestCol = col; }
+  }
+
+  return bestScore >= 2 ? bestCol : '';
 }
 
 function autoMatch(key, header) {
@@ -533,12 +789,15 @@ function renderPreviewTable() {
   } else {
     const signersCol = isAdvanced ? '<th>Firmantes</th>' : '';
     const fileCol = hasPDFs ? '<th>Archivo</th><th>Tamaño</th>' : '';
-    document.getElementById('previewHead').innerHTML = `<tr><th>#</th><th>Estado</th><th>Email</th><th>Nombre</th>${signersCol}${fileCol}</tr>`;
+    const tplVars = useTemplate ? getActiveTemplateVarMappings() : [];
+    const tplVarHeaders = tplVars.map(v => `<th>${esc(v.widgetName)}</th>`).join('');
+    document.getElementById('previewHead').innerHTML = `<tr><th>#</th><th>Estado</th><th>Email</th><th>Nombre</th>${signersCol}${fileCol}${tplVarHeaders}</tr>`;
     document.getElementById('previewBody').innerHTML = matchedData.map((d, i) => {
       const ok = d.email && d.fileMatch;
       const sigTd = isAdvanced ? `<td>${d.signers.length} firmante(s)</td>` : '';
       const fileTd = hasPDFs ? `<td>${d.fileName||'—'}</td><td class="${d.fileSize>5e6?'size-over':d.fileSize>3e6?'size-warn':'size-ok'}">${d.fileSize?formatSize(d.fileSize):'—'}</td>` : '';
-      return `<tr><td>${i+1}</td><td><span class="status-dot ${ok?'matched':'missing'}"></span>${ok?'OK':'Falta'}</td><td>${d.email||'—'}</td><td>${d.name||'—'}</td>${sigTd}${fileTd}</tr>`;
+      const tplVarTds = tplVars.map(v => `<td>${esc(d.rawRow[v.column] || '—')}</td>`).join('');
+      return `<tr><td>${i+1}</td><td><span class="status-dot ${ok?'matched':'missing'}"></span>${ok?'OK':'Falta'}</td><td>${d.email||'—'}</td><td>${d.name||'—'}</td>${sigTd}${fileTd}${tplVarTds}</tr>`;
     }).join('');
   }
 }
@@ -557,6 +816,10 @@ function buildSummary() {
   if (useTemplate) {
     const sel = document.getElementById('bulk-tpl-select');
     html += `<span>Plantilla:</span><code>${sel?.options[sel.selectedIndex]?.text || '—'}</code>`;
+    const tplVars = getActiveTemplateVarMappings();
+    if (tplVars.length) {
+      html += `<span>Variables de plantilla:</span><code>${tplVars.map(v => v.widgetName + ' ← ' + v.column).join(', ')}</code>`;
+    }
   }
 
   if (!isSMS) {
@@ -566,6 +829,8 @@ function buildSummary() {
     if (subj) html += `<span>Asunto:</span><code>${esc(subj)}</code>`;
     if (body) html += `<span>Body:</span><code>${esc(body.substring(0, 50))}${body.length > 50 ? '...' : ''}</code>`;
     if (brand) html += `<span>Branding:</span><code>${esc(brand)}</code>`;
+    const replyTo = document.getElementById('toggle-replyto')?.checked ? document.getElementById('cfg-replyto').value.trim() : '';
+    if (replyTo) html += `<span>Reply-To:</span><code>${esc(replyTo)}</code>`;
   }
 
   html += '</div>';
@@ -691,6 +956,12 @@ async function startBulkSend() {
       if (operationType === 'advanced') fd.append('type', 'advanced');
       if (useTemplate && tplId) {
         fd.append('templates[0]', tplId);
+        // Append template variable data from mapped columns
+        const tplVars = getActiveTemplateVarMappings();
+        tplVars.forEach(tv => {
+          const val = item.rawRow[tv.column] || '';
+          fd.append(`data[${tv.widgetName}]`, resolveVars(val, item));
+        });
       } else if (item.fileName && pdfFiles[item.fileName.toLowerCase()]) {
         fd.append('files[0]', pdfFiles[item.fileName.toLowerCase()].file, item.fileName);
       }
@@ -699,6 +970,9 @@ async function startBulkSend() {
       if (rs) fd.append('subject', rs);
       if (rb) fd.append('body', rb);
       if (brand) fd.append('branding_id', brand);
+      // Reply-To
+      const replyTo = document.getElementById('toggle-replyto')?.checked ? document.getElementById('cfg-replyto').value.trim() : '';
+      if (replyTo) fd.append('reply_to', replyTo);
     }
 
     const extra = !isSMS && item.signers.length > 1 ? ` — ${item.signers.length} firmantes` : '';
@@ -786,7 +1060,7 @@ function getTemplateSampleData() {
   }
 
   if (isAdvanced) {
-    return {
+    const data = {
       headers: ['email', 'name', 'email_2', 'name_2', 'file'],
       rows: [
         ['joe.doe@example.com', 'Joe Doe', 'jane.smith@example.com', 'Jane Smith', 'contrato_joe.pdf'],
@@ -796,10 +1070,12 @@ function getTemplateSampleData() {
         ['elena.moreno@example.com', 'Elena Moreno', 'david.jimenez@example.com', 'David Jimenez', 'contrato_elena.pdf']
       ]
     };
+    if (useTemplate) addTemplateSampleCols(data);
+    return data;
   }
 
   // simple / email
-  return {
+  const data = {
     headers: ['email', 'name', 'file'],
     rows: [
       ['joe.doe@example.com', 'Joe Doe', 'contrato_joe.pdf'],
@@ -809,6 +1085,20 @@ function getTemplateSampleData() {
       ['pedro.martinez@example.com', 'Pedro Martinez', 'contrato_pedro.pdf']
     ]
   };
+  if (useTemplate) addTemplateSampleCols(data);
+  return data;
+}
+
+function addTemplateSampleCols(data) {
+  data.headers.push('campo_plantilla_1', 'campo_plantilla_2');
+  const sampleVals = [
+    ['Valor A1', 'Valor B1'],
+    ['Valor A2', 'Valor B2'],
+    ['Valor A3', 'Valor B3'],
+    ['Valor A4', 'Valor B4'],
+    ['Valor A5', 'Valor B5']
+  ];
+  data.rows.forEach((r, i) => { r.push(...(sampleVals[i] || ['', ''])); });
 }
 
 function downloadTemplate(format) {
