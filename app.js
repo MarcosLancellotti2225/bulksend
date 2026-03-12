@@ -32,6 +32,8 @@ let templatesList = [];
 let useTemplate = false;
 let bulkSignerCount = 1;
 let templateVarMappings = []; // [{widgetName: 'campo1', column: 'columna_excel'}]
+let detectedVariables = [];    // ['company_name', 'insert alias', ...]
+let useTemplateVars = false;
 
 const OFFICIAL_VARIABLES = [
   { name: 'signer_name', desc: 'Nombre del firmante', category: 'firmante' },
@@ -75,6 +77,7 @@ function resetLauncher() {
   matchedData = []; sendLog = []; sending = false;
   templatesList = []; useTemplate = false;
   bulkSignerCount = 1; templateVarMappings = [];
+  detectedVariables = []; useTemplateVars = false;
 
   document.getElementById('appWrapper').classList.remove('active');
   document.getElementById('launcherOverlay').classList.remove('hidden');
@@ -138,8 +141,79 @@ function setupBulkMode() {
 function toggleBulkTemplate() {
   useTemplate = document.getElementById('bulk-tpl-toggle').checked;
   document.getElementById('bulk-tpl-picker').style.display = useTemplate ? 'block' : 'none';
-  if (!useTemplate) templateVarMappings = [];
+  if (!useTemplate) {
+    templateVarMappings = [];
+    detectedVariables = [];
+    useTemplateVars = false;
+  }
   renderColumnDescriptions();
+}
+
+function toggleTemplateVars() {
+  useTemplateVars = document.getElementById('toggle-tpl-vars').checked;
+  document.getElementById('wordUploadArea').style.display = useTemplateVars ? 'block' : 'none';
+  if (!useTemplateVars) {
+    detectedVariables = [];
+    templateVarMappings = [];
+    const container = document.getElementById('detectedVarsContainer');
+    if (container) container.style.display = 'none';
+    // Reset word drop zone
+    const zone = document.getElementById('wordDropZone');
+    if (zone) {
+      zone.classList.remove('has-file');
+      zone.innerHTML = '<span class="word-drop-icon">📄</span><span class="word-drop-text">Subir Word de referencia (.docx)</span>';
+    }
+  }
+}
+
+/* ===== WORD PARSING (mammoth.js) ===== */
+
+async function handleWordUpload(files) {
+  if (!files || !files.length) return;
+  const file = files[0];
+  if (!file.name.toLowerCase().endsWith('.docx')) {
+    alert('Solo se aceptan archivos .docx');
+    return;
+  }
+
+  const zone = document.getElementById('wordDropZone');
+  zone.innerHTML = '<span class="word-drop-text">Procesando...</span>';
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    const text = result.value;
+    const matches = [...text.matchAll(/\{\{([^}]+)\}\}/g)];
+    const unique = [...new Set(matches.map(m => m[1].trim()))];
+
+    detectedVariables = unique;
+    // Initialize mappings from detected variables
+    templateVarMappings = unique.map(v => ({ widgetName: v, column: '' }));
+
+    zone.classList.add('has-file');
+    zone.innerHTML = `<span class="file-info">✅ ${esc(file.name)} — ${unique.length} variable(s) detectada(s)</span>`;
+
+    renderDetectedVariables();
+  } catch (err) {
+    zone.innerHTML = '<span class="word-drop-icon">📄</span><span class="word-drop-text">Subir Word de referencia (.docx)</span>';
+    alert('Error al leer el archivo Word: ' + err.message);
+  }
+}
+
+function renderDetectedVariables() {
+  const container = document.getElementById('detectedVarsContainer');
+  if (!detectedVariables.length) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'block';
+  container.innerHTML = `
+    <div class="detected-vars-box">
+      <div class="detected-vars-header">Variables detectadas en el documento</div>
+      <div class="detected-vars-chips">
+        ${detectedVariables.map(v => `<span class="detected-var-chip">{{${esc(v)}}}</span>`).join('')}
+      </div>
+    </div>`;
 }
 
 function renderColumnDescriptions() {
@@ -425,14 +499,15 @@ function buildMapping() {
   }
 
   // Template variable mappings (when using a template)
-  if (useTemplate && !isSMS) {
+  const showTplVars = useTemplate && !isSMS && (useTemplateVars || templateVarMappings.some(m => m.widgetName));
+  if (showTplVars) {
     html += buildTemplateVarSection();
   }
 
   area.innerHTML = html;
 
   // Restore template var mapping values
-  if (useTemplate && !isSMS) {
+  if (showTplVars) {
     restoreTemplateVarMappings();
   }
 
@@ -461,6 +536,47 @@ function removeBulkSigner(n) {
 /* ===== TEMPLATE VARIABLE MAPPINGS ===== */
 
 function buildTemplateVarSection() {
+  // If we have detected variables from Word, show them as fixed rows
+  // Otherwise show manual entry rows
+  const hasDetected = detectedVariables.length > 0 && useTemplateVars;
+
+  if (hasDetected) {
+    return buildDetectedVarMappingSection();
+  }
+  return buildManualVarMappingSection();
+}
+
+function buildDetectedVarMappingSection() {
+  const colOpts = ['<option value="">— Sin asignar —</option>']
+    .concat(dataHeaders.map(h => `<option value="${h}">${h}</option>`)).join('');
+
+  // Auto-suggest on first build if no columns assigned yet
+  const needsAutoSuggest = templateVarMappings.every(m => !m.column);
+
+  let html = `<div class="mapping-group template-var-group">
+    <div class="mapping-group-title"><span>Mapeo de variables de plantilla</span><span class="stat-badge">${detectedVariables.length} variables</span></div>
+    <p class="tpl-var-desc">Variables detectadas en el Word. Asigna cada una a la columna correspondiente del archivo de datos.</p>
+    <div id="tplVarMappingsContainer">`;
+
+  templateVarMappings.forEach((m, i) => {
+    const suggested = needsAutoSuggest ? autoSuggestColumn(m.widgetName, dataHeaders) : m.column;
+    if (needsAutoSuggest) m.column = suggested;
+
+    const opts = ['<option value="">— Sin asignar —</option>']
+      .concat(dataHeaders.map(h => `<option value="${h}" ${h === suggested ? 'selected' : ''}>${h}</option>`)).join('');
+
+    html += `<div class="tpl-var-row detected-var-row">
+      <span class="detected-var-chip-label">{{${esc(m.widgetName)}}}</span>
+      <span class="tpl-var-arrow">→</span>
+      <select id="tplVarCol-${i}" onchange="updateTemplateVarMapping(${i})">${opts}</select>
+    </div>`;
+  });
+
+  html += `</div></div>`;
+  return html;
+}
+
+function buildManualVarMappingSection() {
   const colOpts = ['<option value="">— Sin asignar —</option>']
     .concat(dataHeaders.map(h => `<option value="${h}">${h}</option>`)).join('');
 
@@ -474,7 +590,11 @@ function buildTemplateVarSection() {
   }
 
   templateVarMappings.forEach((m, i) => {
-    html += buildTemplateVarRow(i, colOpts);
+    html += `<div class="tpl-var-row" id="tplVarRow-${i}">
+      <input type="text" class="tpl-var-name" id="tplVarName-${i}" placeholder="Nombre del widget" value="${esc(m.widgetName || '')}" onchange="updateTemplateVarMapping(${i})">
+      <select id="tplVarCol-${i}" onchange="updateTemplateVarMapping(${i})">${colOpts}</select>
+      <button class="btn-remove-signer" onclick="removeTemplateVarMapping(${i})" title="Eliminar">×</button>
+    </div>`;
   });
 
   html += `</div>
@@ -483,25 +603,19 @@ function buildTemplateVarSection() {
   return html;
 }
 
-function buildTemplateVarRow(index, colOpts) {
-  return `<div class="tpl-var-row" id="tplVarRow-${index}">
-    <input type="text" class="tpl-var-name" id="tplVarName-${index}" placeholder="Nombre del widget" value="${esc(templateVarMappings[index]?.widgetName || '')}" onchange="updateTemplateVarMapping(${index})">
-    <select id="tplVarCol-${index}" onchange="updateTemplateVarMapping(${index})">${colOpts}</select>
-    <button class="btn-remove-signer" onclick="removeTemplateVarMapping(${index})" title="Eliminar">×</button>
-  </div>`;
-}
-
 function restoreTemplateVarMappings() {
+  const hasDetected = detectedVariables.length > 0 && useTemplateVars;
   templateVarMappings.forEach((m, i) => {
-    const nameEl = document.getElementById(`tplVarName-${i}`);
+    if (!hasDetected) {
+      const nameEl = document.getElementById(`tplVarName-${i}`);
+      if (nameEl) nameEl.value = m.widgetName || '';
+    }
     const colEl = document.getElementById(`tplVarCol-${i}`);
-    if (nameEl) nameEl.value = m.widgetName || '';
     if (colEl) colEl.value = m.column || '';
   });
 }
 
 function addTemplateVarMapping() {
-  // Save current values first
   saveCurrentTemplateVarValues();
   templateVarMappings.push({ widgetName: '', column: '' });
   buildMapping();
@@ -518,18 +632,24 @@ function removeTemplateVarMapping(index) {
 }
 
 function updateTemplateVarMapping(index) {
-  const nameEl = document.getElementById(`tplVarName-${index}`);
-  const colEl = document.getElementById(`tplVarCol-${index}`);
-  if (nameEl && colEl) {
-    templateVarMappings[index] = { widgetName: nameEl.value.trim(), column: colEl.value };
+  const hasDetected = detectedVariables.length > 0 && useTemplateVars;
+  if (!hasDetected) {
+    const nameEl = document.getElementById(`tplVarName-${index}`);
+    if (nameEl) templateVarMappings[index].widgetName = nameEl.value.trim();
   }
+  const colEl = document.getElementById(`tplVarCol-${index}`);
+  if (colEl) templateVarMappings[index].column = colEl.value;
+  updatePreview();
 }
 
 function saveCurrentTemplateVarValues() {
+  const hasDetected = detectedVariables.length > 0 && useTemplateVars;
   templateVarMappings.forEach((m, i) => {
-    const nameEl = document.getElementById(`tplVarName-${i}`);
+    if (!hasDetected) {
+      const nameEl = document.getElementById(`tplVarName-${i}`);
+      if (nameEl) m.widgetName = nameEl.value.trim();
+    }
     const colEl = document.getElementById(`tplVarCol-${i}`);
-    if (nameEl) m.widgetName = nameEl.value.trim();
     if (colEl) m.column = colEl.value;
   });
 }
@@ -537,6 +657,42 @@ function saveCurrentTemplateVarValues() {
 function getActiveTemplateVarMappings() {
   saveCurrentTemplateVarValues();
   return templateVarMappings.filter(m => m.widgetName && m.column);
+}
+
+/* ===== AUTO-SUGGEST COLUMN MATCHING ===== */
+
+function autoSuggestColumn(varName, columns) {
+  if (!columns.length) return '';
+  const norm = s => s.toLowerCase().replace(/[_\s-]+/g, ' ').trim();
+  const nVar = norm(varName);
+  const varWords = nVar.split(' ').filter(w => w.length > 2);
+
+  // Exact normalized match
+  for (const col of columns) {
+    if (norm(col) === nVar) return col;
+  }
+
+  // Check if column name is contained in variable or vice versa
+  for (const col of columns) {
+    const nCol = norm(col);
+    if (nCol.includes(nVar) || nVar.includes(nCol)) return col;
+  }
+
+  // Word overlap: find best match by shared significant words
+  let bestCol = '', bestScore = 0;
+  for (const col of columns) {
+    const colWords = norm(col).split(' ').filter(w => w.length > 2);
+    let score = 0;
+    for (const vw of varWords) {
+      for (const cw of colWords) {
+        if (vw === cw) score += 3;
+        else if (cw.includes(vw) || vw.includes(cw)) score += 2;
+      }
+    }
+    if (score > bestScore) { bestScore = score; bestCol = col; }
+  }
+
+  return bestScore >= 2 ? bestCol : '';
 }
 
 function autoMatch(key, header) {
@@ -673,6 +829,8 @@ function buildSummary() {
     if (subj) html += `<span>Asunto:</span><code>${esc(subj)}</code>`;
     if (body) html += `<span>Body:</span><code>${esc(body.substring(0, 50))}${body.length > 50 ? '...' : ''}</code>`;
     if (brand) html += `<span>Branding:</span><code>${esc(brand)}</code>`;
+    const replyTo = document.getElementById('toggle-replyto')?.checked ? document.getElementById('cfg-replyto').value.trim() : '';
+    if (replyTo) html += `<span>Reply-To:</span><code>${esc(replyTo)}</code>`;
   }
 
   html += '</div>';
@@ -812,6 +970,9 @@ async function startBulkSend() {
       if (rs) fd.append('subject', rs);
       if (rb) fd.append('body', rb);
       if (brand) fd.append('branding_id', brand);
+      // Reply-To
+      const replyTo = document.getElementById('toggle-replyto')?.checked ? document.getElementById('cfg-replyto').value.trim() : '';
+      if (replyTo) fd.append('reply_to', replyTo);
     }
 
     const extra = !isSMS && item.signers.length > 1 ? ` — ${item.signers.length} firmantes` : '';
