@@ -127,21 +127,18 @@ function setupBulkMode() {
   document.getElementById('bulk-sms-section').style.display = isSMS ? 'block' : 'none';
   document.getElementById('bulk-tpl-section').style.display = isSMS ? 'none' : 'block';
 
-  // Toolbar de formato HTML solo para email certificado
-  const bodyToolbar = document.getElementById('bodyToolbar');
-  if (bodyToolbar) bodyToolbar.style.display = isEmail ? 'flex' : 'none';
-
-  const bodyEl = document.getElementById('cfg-body');
-  if (bodyEl) {
-    bodyEl.placeholder = isEmail
-      ? 'Acepta HTML. Usa {{signer_name}} y enlaces <a href="...">texto</a>'
-      : 'Usa variables como {{signer_name}}...';
+  // Editor enriquecido solo para email certificado
+  const richContainer = document.getElementById('richEditorContainer');
+  const plainBody = document.getElementById('cfg-body');
+  if (richContainer && plainBody) {
+    richContainer.style.display = isEmail ? 'block' : 'none';
+    plainBody.style.display = isEmail ? 'none' : 'block';
   }
 
   setupDropZone('dataDropZone', 'dataInput', handleDataUpload);
   setupDropZone('pdfDropZone', 'pdfInput', handlePDFUpload);
 
-  ['cfg-subject', 'cfg-body', 'cfg-sms-body'].forEach(id => {
+  ['cfg-subject', 'cfg-body', 'cfg-sms-body', 'cfg-body-rich'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('focus', () => { activeTextField = el; });
   });
@@ -150,39 +147,95 @@ function setupBulkMode() {
   renderColumnDescriptions();
 }
 
-function insertLink() {
-  const target = document.getElementById('cfg-body');
-  if (!target || target.disabled) { alert('Activa primero el cuerpo del email'); return; }
-  const url = prompt('URL del enlace (https://...):');
-  if (!url) return;
-  const selStart = target.selectionStart, selEnd = target.selectionEnd;
-  const selected = target.value.substring(selStart, selEnd);
-  const linkText = selected || prompt('Texto visible del enlace:', url) || url;
-  const tag = `<a href="${url}">${linkText}</a>`;
-  target.value = target.value.substring(0, selStart) + tag + target.value.substring(selEnd);
-  target.focus();
-  target.selectionStart = target.selectionEnd = selStart + tag.length;
+function toggleBodyField(cb) {
+  const isEmail = operationType === 'email';
+  const enabled = cb.checked;
+  if (isEmail) {
+    const rich = document.getElementById('cfg-body-rich');
+    const container = document.getElementById('richEditorContainer');
+    rich.contentEditable = enabled ? 'true' : 'false';
+    container.classList.toggle('disabled', !enabled);
+    if (enabled) rich.focus();
+  } else {
+    document.getElementById('cfg-body').disabled = !enabled;
+  }
 }
 
-function insertBodyTag(tag, selfClosing) {
-  const target = document.getElementById('cfg-body');
-  if (!target || target.disabled) { alert('Activa primero el cuerpo del email'); return; }
-  const selStart = target.selectionStart, selEnd = target.selectionEnd;
-  const selected = target.value.substring(selStart, selEnd);
-  let insert;
-  if (selfClosing) {
-    insert = `<${tag}>`;
+/* ===== RICH TEXT EDITOR COMMANDS ===== */
+function rtFocus() {
+  const rich = document.getElementById('cfg-body-rich');
+  if (rich && rich.isContentEditable) rich.focus();
+}
+
+function rtExec(cmd, val) {
+  rtFocus();
+  document.execCommand(cmd, false, val || null);
+}
+
+function rtBlock(sel) {
+  if (sel.value) rtExec('formatBlock', sel.value);
+  sel.value = '';
+}
+
+function rtFontSize(sel) {
+  if (sel.value) rtExec('fontSize', sel.value);
+  sel.value = '';
+}
+
+function rtColor(input, cmd) {
+  rtExec(cmd, input.value);
+}
+
+function rtLink() {
+  const rich = document.getElementById('cfg-body-rich');
+  if (!rich.isContentEditable) { alert('Activa primero el cuerpo del email'); return; }
+  const url = prompt('URL del enlace (https://...):', 'https://');
+  if (!url || url === 'https://') return;
+  rtFocus();
+  const sel = window.getSelection();
+  if (sel.rangeCount && !sel.isCollapsed) {
+    document.execCommand('createLink', false, url);
   } else {
-    insert = `<${tag}>${selected}</${tag}>`;
+    const text = prompt('Texto visible del enlace:', url) || url;
+    document.execCommand('insertHTML', false, `<a href="${url}">${text}</a>`);
   }
-  target.value = target.value.substring(0, selStart) + insert + target.value.substring(selEnd);
-  target.focus();
-  if (selfClosing || !selected) {
-    target.selectionStart = target.selectionEnd = selStart + insert.length;
+}
+
+function rtTogglePreview() {
+  const rich = document.getElementById('cfg-body-rich');
+  const src = document.getElementById('cfg-body-html');
+  const btn = document.getElementById('rtHtmlBtn');
+  const showingHtml = src.style.display !== 'none';
+  if (showingHtml) {
+    rich.innerHTML = src.value;
+    src.style.display = 'none';
+    rich.style.display = 'block';
+    btn.classList.remove('active');
   } else {
-    target.selectionStart = selStart;
-    target.selectionEnd = selStart + insert.length;
+    src.value = rich.innerHTML;
+    src.style.display = 'block';
+    rich.style.display = 'none';
+    btn.classList.add('active');
   }
+}
+
+function getBodyValue() {
+  const isEmail = operationType === 'email';
+  if (isEmail) {
+    const src = document.getElementById('cfg-body-html');
+    const rich = document.getElementById('cfg-body-rich');
+    // Si esta en modo fuente HTML, sincronizar primero
+    if (src.style.display !== 'none') rich.innerHTML = src.value;
+    return rich.innerHTML.trim();
+  }
+  return document.getElementById('cfg-body').value.trim();
+}
+
+function isBodyEnabled() {
+  if (operationType === 'email') {
+    return document.getElementById('cfg-body-rich').isContentEditable;
+  }
+  return !document.getElementById('cfg-body').disabled;
 }
 
 function toggleBulkTemplate() {
@@ -320,9 +373,16 @@ function renderVariableChips() {
 }
 
 function insertVariable(name) {
-  const target = activeTextField || document.getElementById('cfg-subject');
-  if (!target || target.disabled) return;
   const tag = `{{${name}}}`;
+  // Si el foco esta en el editor enriquecido (contenteditable)
+  if (activeTextField && activeTextField.id === 'cfg-body-rich' && activeTextField.isContentEditable) {
+    activeTextField.focus();
+    document.execCommand('insertText', false, tag);
+    return;
+  }
+  // Campo de texto simple (textarea/input)
+  const target = activeTextField || document.getElementById('cfg-subject');
+  if (!target || target.disabled || target.tagName === 'DIV') return;
   const s = target.selectionStart, e = target.selectionEnd;
   target.value = target.value.substring(0, s) + tag + target.value.substring(e);
   target.focus();
@@ -869,10 +929,13 @@ function buildSummary() {
 
   if (!isSMS) {
     const subj = document.getElementById('toggle-subject')?.checked ? document.getElementById('cfg-subject').value : '';
-    const body = document.getElementById('toggle-body')?.checked ? document.getElementById('cfg-body').value : '';
+    const body = document.getElementById('toggle-body')?.checked ? getBodyValue() : '';
     const brand = document.getElementById('toggle-branding')?.checked ? document.getElementById('cfg-branding').value : '';
     if (subj) html += `<span>Asunto:</span><code>${esc(subj)}</code>`;
-    if (body) html += `<span>Body:</span><code>${esc(body.substring(0, 50))}${body.length > 50 ? '...' : ''}</code>`;
+    if (body) {
+      const plain = body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      html += `<span>Body:</span><code>${esc(plain.substring(0, 60))}${plain.length > 60 ? '...' : ''}</code>`;
+    }
     if (brand) html += `<span>Branding:</span><code>${esc(brand)}</code>`;
     const replyTo = document.getElementById('toggle-replyto')?.checked ? document.getElementById('cfg-replyto').value.trim() : '';
     if (replyTo) html += `<span>Reply-To:</span><code>${esc(replyTo)}</code>`;
@@ -927,7 +990,7 @@ async function startBulkSend() {
   const isEmail = operationType === 'email';
   const urlRegex = /https?:\/\/|www\./i;
   const preSubj = document.getElementById('toggle-subject')?.checked ? document.getElementById('cfg-subject').value.trim() : '';
-  const preBody = document.getElementById('toggle-body')?.checked ? document.getElementById('cfg-body').value.trim() : '';
+  const preBody = document.getElementById('toggle-body')?.checked ? getBodyValue() : '';
   const preSmsBody = document.getElementById('cfg-sms-body')?.value?.trim() || '';
 
   const fieldsWithUrls = [];

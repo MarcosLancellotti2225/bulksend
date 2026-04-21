@@ -138,14 +138,63 @@
             <input type="email" id="cfg-replyto" placeholder="respuestas@empresa.com" disabled>
           </div>
           <div class="config-card config-full">
-            <div class="field-toggle"><label>Cuerpo del email</label><label class="toggle-switch"><input type="checkbox" id="toggle-body" onchange="toggleField('cfg-body',this)"><span class="toggle-slider"></span></label></div>
-            <div class="body-toolbar" id="bodyToolbar" style="display:none">
-              <button type="button" class="btn-body-tool" onclick="insertLink()" title="Insertar hipervínculo">🔗 Enlace</button>
-              <button type="button" class="btn-body-tool" onclick="insertBodyTag('strong')" title="Negrita">𝗕 Negrita</button>
-              <button type="button" class="btn-body-tool" onclick="insertBodyTag('em')" title="Cursiva">𝘐 Cursiva</button>
-              <button type="button" class="btn-body-tool" onclick="insertBodyTag('br', true)" title="Salto de línea">↵ Salto</button>
-              <span class="body-toolbar-hint">Acepta HTML</span>
+            <div class="field-toggle"><label>Cuerpo del email</label><label class="toggle-switch"><input type="checkbox" id="toggle-body" onchange="toggleBodyField(this)"><span class="toggle-slider"></span></label></div>
+            <!-- Editor enriquecido (email certificado) -->
+            <div class="rich-editor disabled" id="richEditorContainer" style="display:none">
+              <div class="rich-toolbar">
+                <select class="rt-select" onchange="rtBlock(this)" title="Estilo de párrafo">
+                  <option value="">Párrafo</option>
+                  <option value="H1">Título 1</option>
+                  <option value="H2">Título 2</option>
+                  <option value="H3">Título 3</option>
+                  <option value="P">Normal</option>
+                  <option value="BLOCKQUOTE">Cita</option>
+                </select>
+                <select class="rt-select" onchange="rtFontSize(this)" title="Tamaño">
+                  <option value="">Tamaño</option>
+                  <option value="1">Muy pequeño</option>
+                  <option value="2">Pequeño</option>
+                  <option value="3">Normal</option>
+                  <option value="4">Grande</option>
+                  <option value="5">Mayor</option>
+                  <option value="6">Enorme</option>
+                  <option value="7">Gigante</option>
+                </select>
+                <span class="rt-sep"></span>
+                <button type="button" class="rt-btn" onclick="rtExec('bold')" title="Negrita"><b>B</b></button>
+                <button type="button" class="rt-btn" onclick="rtExec('italic')" title="Cursiva"><i>I</i></button>
+                <button type="button" class="rt-btn" onclick="rtExec('underline')" title="Subrayado"><u>U</u></button>
+                <button type="button" class="rt-btn" onclick="rtExec('strikeThrough')" title="Tachado"><s>S</s></button>
+                <span class="rt-sep"></span>
+                <label class="rt-color" title="Color de texto">
+                  <span>A</span>
+                  <input type="color" onchange="rtColor(this,'foreColor')">
+                </label>
+                <label class="rt-color rt-bg" title="Color de fondo">
+                  <span>▮</span>
+                  <input type="color" onchange="rtColor(this,'hiliteColor')">
+                </label>
+                <span class="rt-sep"></span>
+                <button type="button" class="rt-btn" onclick="rtExec('justifyLeft')" title="Alinear izquierda">⇤</button>
+                <button type="button" class="rt-btn" onclick="rtExec('justifyCenter')" title="Centrar">⇔</button>
+                <button type="button" class="rt-btn" onclick="rtExec('justifyRight')" title="Alinear derecha">⇥</button>
+                <button type="button" class="rt-btn" onclick="rtExec('justifyFull')" title="Justificar">≡</button>
+                <span class="rt-sep"></span>
+                <button type="button" class="rt-btn" onclick="rtExec('insertUnorderedList')" title="Lista">•</button>
+                <button type="button" class="rt-btn" onclick="rtExec('insertOrderedList')" title="Lista numerada">1.</button>
+                <button type="button" class="rt-btn" onclick="rtExec('outdent')" title="Quitar sangría">⇐</button>
+                <button type="button" class="rt-btn" onclick="rtExec('indent')" title="Sangría">⇒</button>
+                <span class="rt-sep"></span>
+                <button type="button" class="rt-btn" onclick="rtLink()" title="Insertar enlace">🔗</button>
+                <button type="button" class="rt-btn" onclick="rtExec('unlink')" title="Quitar enlace">⊘</button>
+                <span class="rt-sep"></span>
+                <button type="button" class="rt-btn" onclick="rtExec('removeFormat')" title="Limpiar formato">✕</button>
+                <button type="button" class="rt-btn" onclick="rtTogglePreview()" title="Ver código HTML" id="rtHtmlBtn">&lt;/&gt;</button>
+              </div>
+              <div class="rich-body" id="cfg-body-rich" contenteditable="false" data-placeholder="Escribí el contenido del email. Podés usar {{variables}} y dar formato con la barra de arriba."></div>
+              <textarea class="rich-source" id="cfg-body-html" style="display:none" spellcheck="false"></textarea>
             </div>
+            <!-- Textarea simple (firmas) -->
             <textarea id="cfg-body" rows="3" placeholder="Usa variables como {{signer_name}}..." disabled></textarea>
           </div>
         </div>
