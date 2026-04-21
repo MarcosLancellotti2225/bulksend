@@ -122,9 +122,21 @@ async function fetchTemplates() {
 
 function setupBulkMode() {
   const isSMS = operationType === 'sms';
+  const isEmail = operationType === 'email';
   document.getElementById('pdfUploadSection').style.display = isSMS ? 'none' : 'block';
   document.getElementById('bulk-sms-section').style.display = isSMS ? 'block' : 'none';
   document.getElementById('bulk-tpl-section').style.display = isSMS ? 'none' : 'block';
+
+  // Toolbar de formato HTML solo para email certificado
+  const bodyToolbar = document.getElementById('bodyToolbar');
+  if (bodyToolbar) bodyToolbar.style.display = isEmail ? 'flex' : 'none';
+
+  const bodyEl = document.getElementById('cfg-body');
+  if (bodyEl) {
+    bodyEl.placeholder = isEmail
+      ? 'Acepta HTML. Usa {{signer_name}} y enlaces <a href="...">texto</a>'
+      : 'Usa variables como {{signer_name}}...';
+  }
 
   setupDropZone('dataDropZone', 'dataInput', handleDataUpload);
   setupDropZone('pdfDropZone', 'pdfInput', handlePDFUpload);
@@ -136,6 +148,41 @@ function setupBulkMode() {
 
   renderVariableChips();
   renderColumnDescriptions();
+}
+
+function insertLink() {
+  const target = document.getElementById('cfg-body');
+  if (!target || target.disabled) { alert('Activa primero el cuerpo del email'); return; }
+  const url = prompt('URL del enlace (https://...):');
+  if (!url) return;
+  const selStart = target.selectionStart, selEnd = target.selectionEnd;
+  const selected = target.value.substring(selStart, selEnd);
+  const linkText = selected || prompt('Texto visible del enlace:', url) || url;
+  const tag = `<a href="${url}">${linkText}</a>`;
+  target.value = target.value.substring(0, selStart) + tag + target.value.substring(selEnd);
+  target.focus();
+  target.selectionStart = target.selectionEnd = selStart + tag.length;
+}
+
+function insertBodyTag(tag, selfClosing) {
+  const target = document.getElementById('cfg-body');
+  if (!target || target.disabled) { alert('Activa primero el cuerpo del email'); return; }
+  const selStart = target.selectionStart, selEnd = target.selectionEnd;
+  const selected = target.value.substring(selStart, selEnd);
+  let insert;
+  if (selfClosing) {
+    insert = `<${tag}>`;
+  } else {
+    insert = `<${tag}>${selected}</${tag}>`;
+  }
+  target.value = target.value.substring(0, selStart) + insert + target.value.substring(selEnd);
+  target.focus();
+  if (selfClosing || !selected) {
+    target.selectionStart = target.selectionEnd = selStart + insert.length;
+  } else {
+    target.selectionStart = selStart;
+    target.selectionEnd = selStart + insert.length;
+  }
 }
 
 function toggleBulkTemplate() {
@@ -875,7 +922,9 @@ async function startBulkSend() {
     if (big.length && !confirm(`${big.length} archivo(s) superan 5 MB. ¿Continuar?`)) return;
   }
 
-  // Validar URLs en subject/body (Signaturit no las permite)
+  // Validar URLs en subject/body (Signaturit no las permite en firmas/SMS)
+  // El email certificado SI permite HTML e hipervínculos
+  const isEmail = operationType === 'email';
   const urlRegex = /https?:\/\/|www\./i;
   const preSubj = document.getElementById('toggle-subject')?.checked ? document.getElementById('cfg-subject').value.trim() : '';
   const preBody = document.getElementById('toggle-body')?.checked ? document.getElementById('cfg-body').value.trim() : '';
@@ -883,7 +932,7 @@ async function startBulkSend() {
 
   const fieldsWithUrls = [];
   if (urlRegex.test(preSubj)) fieldsWithUrls.push('Asunto');
-  if (urlRegex.test(preBody)) fieldsWithUrls.push('Cuerpo del email');
+  if (!isEmail && urlRegex.test(preBody)) fieldsWithUrls.push('Cuerpo del email');
   if (isSMS && urlRegex.test(preSmsBody)) fieldsWithUrls.push('Cuerpo del SMS');
 
   if (fieldsWithUrls.length) {
