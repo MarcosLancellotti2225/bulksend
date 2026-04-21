@@ -139,6 +139,13 @@
           </div>
           <div class="config-card config-full">
             <div class="field-toggle"><label>Cuerpo del email</label><label class="toggle-switch"><input type="checkbox" id="toggle-body" onchange="toggleField('cfg-body',this)"><span class="toggle-slider"></span></label></div>
+            <div class="body-toolbar" id="bodyToolbar" style="display:none">
+              <button type="button" class="btn-body-tool" onclick="insertLink()" title="Insertar hipervínculo">🔗 Enlace</button>
+              <button type="button" class="btn-body-tool" onclick="insertBodyTag('strong')" title="Negrita">𝗕 Negrita</button>
+              <button type="button" class="btn-body-tool" onclick="insertBodyTag('em')" title="Cursiva">𝘐 Cursiva</button>
+              <button type="button" class="btn-body-tool" onclick="insertBodyTag('br', true)" title="Salto de línea">↵ Salto</button>
+              <span class="body-toolbar-hint">Acepta HTML</span>
+            </div>
             <textarea id="cfg-body" rows="3" placeholder="Usa variables como {{signer_name}}..." disabled></textarea>
           </div>
         </div>
