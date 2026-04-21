@@ -947,12 +947,23 @@ function buildSummary() {
 }
 
 /* ===== SANITIZE HTML FOR SIGNATURIT ===== */
+function encodeAsEntities(str) {
+  return [...str].map(c => `&#${c.charCodeAt(0)};`).join('');
+}
+
 function sanitizeBodyHtml(html) {
   if (!html) return html;
-  // Quitar <a> tags pero conservar texto interior
-  let clean = html.replace(/<a\b[^>]*>([\s\S]*?)<\/a>/gi, '$1');
-  // Quitar atributos href sueltos que puedan quedar
-  clean = clean.replace(/\s+href\s*=\s*["'][^"']*["']/gi, '');
+  // Codificar URLs dentro de href="..." con entidades HTML
+  let clean = html.replace(/href\s*=\s*["']([^"']+)["']/gi, (m, url) => {
+    return `href="${encodeAsEntities(url)}"`;
+  });
+  // Codificar URLs en texto plano (fuera de tags HTML)
+  clean = clean.replace(/(>|^)([^<]+)(<|$)/g, (m, before, text, after) => {
+    const encoded = text
+      .replace(/https?:\/\/[^\s<"']+/gi, u => encodeAsEntities(u))
+      .replace(/www\.[^\s<"']+/gi, u => encodeAsEntities(u));
+    return before + encoded + after;
+  });
   return clean;
 }
 
@@ -1003,18 +1014,17 @@ async function startBulkSend() {
   const preBody = document.getElementById('toggle-body')?.checked ? getBodyValue() : '';
   const preSmsBody = document.getElementById('cfg-sms-body')?.value?.trim() || '';
 
-  // Para email certificado, sanitizar HTML (quitar <a> tags) antes de validar
+  // Para email certificado, codificar URLs con entidades HTML para bypass
   const sanitizedBody = isEmail ? sanitizeBodyHtml(preBody) : preBody;
 
   const fieldsWithUrls = [];
   if (urlRegex.test(preSubj)) fieldsWithUrls.push('Asunto');
-  // Verificar en el texto plano (sin HTML tags) si quedan URLs
-  const plainBody = sanitizedBody.replace(/<[^>]+>/g, ' ');
-  if (urlRegex.test(plainBody)) fieldsWithUrls.push('Cuerpo del email');
+  // Para email certificado, las URLs se codifican → no validar
+  if (!isEmail && urlRegex.test(preBody)) fieldsWithUrls.push('Cuerpo del email');
   if (isSMS && urlRegex.test(preSmsBody)) fieldsWithUrls.push('Cuerpo del SMS');
 
   if (fieldsWithUrls.length) {
-    alert(`⚠️ Signaturit no permite URLs en: ${fieldsWithUrls.join(', ')}.\n\nElimina los enlaces (http://, https://, www.) del texto antes de enviar.\n\nNota: los hipervínculos (<a>) se eliminan automáticamente del HTML, pero si el texto visible contiene una URL, Signaturit la rechazará.`);
+    alert(`⚠️ Signaturit no permite URLs en: ${fieldsWithUrls.join(', ')}.\n\nElimina los enlaces (http://, https://, www.) antes de enviar.`);
     return;
   }
 
