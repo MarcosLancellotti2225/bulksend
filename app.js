@@ -189,7 +189,8 @@ function rtColor(input, cmd) {
 function rtLink() {
   const rich = document.getElementById('cfg-body-rich');
   if (!rich.isContentEditable) { alert('Activa primero el cuerpo del email'); return; }
-  const url = prompt('URL del enlace (https://...):', 'https://');
+  alert('⚠️ Nota: Signaturit no permite URLs en el cuerpo del email.\nLos enlaces (<a href>) se eliminarán automáticamente al enviar.\nEl texto del enlace se conservará como texto plano.');
+  const url = prompt('URL del enlace (se mostrará solo en el editor):', 'https://');
   if (!url || url === 'https://') return;
   rtFocus();
   const sel = window.getSelection();
@@ -945,6 +946,16 @@ function buildSummary() {
   document.getElementById('summaryBox').innerHTML = html;
 }
 
+/* ===== SANITIZE HTML FOR SIGNATURIT ===== */
+function sanitizeBodyHtml(html) {
+  if (!html) return html;
+  // Quitar <a> tags pero conservar texto interior
+  let clean = html.replace(/<a\b[^>]*>([\s\S]*?)<\/a>/gi, '$1');
+  // Quitar atributos href sueltos que puedan quedar
+  clean = clean.replace(/\s+href\s*=\s*["'][^"']*["']/gi, '');
+  return clean;
+}
+
 /* ===== RESOLVE VARS ===== */
 function resolveVars(text, item) {
   if (!text) return text;
@@ -985,21 +996,25 @@ async function startBulkSend() {
     if (big.length && !confirm(`${big.length} archivo(s) superan 5 MB. ¿Continuar?`)) return;
   }
 
-  // Validar URLs en subject/body (Signaturit no las permite en firmas/SMS)
-  // El email certificado SI permite HTML e hipervínculos
+  // Validar URLs en subject/body — Signaturit NO permite URLs en ningún tipo
   const isEmail = operationType === 'email';
   const urlRegex = /https?:\/\/|www\./i;
   const preSubj = document.getElementById('toggle-subject')?.checked ? document.getElementById('cfg-subject').value.trim() : '';
   const preBody = document.getElementById('toggle-body')?.checked ? getBodyValue() : '';
   const preSmsBody = document.getElementById('cfg-sms-body')?.value?.trim() || '';
 
+  // Para email certificado, sanitizar HTML (quitar <a> tags) antes de validar
+  const sanitizedBody = isEmail ? sanitizeBodyHtml(preBody) : preBody;
+
   const fieldsWithUrls = [];
   if (urlRegex.test(preSubj)) fieldsWithUrls.push('Asunto');
-  if (!isEmail && urlRegex.test(preBody)) fieldsWithUrls.push('Cuerpo del email');
+  // Verificar en el texto plano (sin HTML tags) si quedan URLs
+  const plainBody = sanitizedBody.replace(/<[^>]+>/g, ' ');
+  if (urlRegex.test(plainBody)) fieldsWithUrls.push('Cuerpo del email');
   if (isSMS && urlRegex.test(preSmsBody)) fieldsWithUrls.push('Cuerpo del SMS');
 
   if (fieldsWithUrls.length) {
-    alert(`⚠️ Signaturit no permite URLs en: ${fieldsWithUrls.join(', ')}.\n\nElimina los enlaces (http://, https://, www.) antes de enviar.`);
+    alert(`⚠️ Signaturit no permite URLs en: ${fieldsWithUrls.join(', ')}.\n\nElimina los enlaces (http://, https://, www.) del texto antes de enviar.\n\nNota: los hipervínculos (<a>) se eliminan automáticamente del HTML, pero si el texto visible contiene una URL, Signaturit la rechazará.`);
     return;
   }
 
@@ -1033,7 +1048,7 @@ async function startBulkSend() {
   log(`Iniciando ${validItems.length} envío(s) de <strong>${OPERATION_LABELS[operationType]}</strong> en ${envLabel}`, 'sys', 'dim');
 
   const subj = preSubj;
-  const body = preBody;
+  const body = sanitizedBody;
   const brand = document.getElementById('toggle-branding')?.checked ? document.getElementById('cfg-branding').value.trim() : '';
   const smsBody = document.getElementById('cfg-sms-body')?.value?.trim() || '';
   const tplId = document.getElementById('bulk-tpl-select')?.value || '';
