@@ -189,7 +189,8 @@ function rtColor(input, cmd) {
 function rtLink() {
   const rich = document.getElementById('cfg-body-rich');
   if (!rich.isContentEditable) { alert('Activa primero el cuerpo del email'); return; }
-  const url = prompt('URL del enlace (https://...):', 'https://');
+  alert('⚠️ Nota: Signaturit no permite URLs en el cuerpo del email.\nLos enlaces (<a href>) se eliminarán automáticamente al enviar.\nEl texto del enlace se conservará como texto plano.');
+  const url = prompt('URL del enlace (se mostrará solo en el editor):', 'https://');
   if (!url || url === 'https://') return;
   rtFocus();
   const sel = window.getSelection();
@@ -945,6 +946,27 @@ function buildSummary() {
   document.getElementById('summaryBox').innerHTML = html;
 }
 
+/* ===== SANITIZE HTML FOR SIGNATURIT ===== */
+function encodeAsEntities(str) {
+  return [...str].map(c => `&#${c.charCodeAt(0)};`).join('');
+}
+
+function sanitizeBodyHtml(html) {
+  if (!html) return html;
+  // Codificar URLs dentro de href="..." con entidades HTML
+  let clean = html.replace(/href\s*=\s*["']([^"']+)["']/gi, (m, url) => {
+    return `href="${encodeAsEntities(url)}"`;
+  });
+  // Codificar URLs en texto plano (fuera de tags HTML)
+  clean = clean.replace(/(>|^)([^<]+)(<|$)/g, (m, before, text, after) => {
+    const encoded = text
+      .replace(/https?:\/\/[^\s<"']+/gi, u => encodeAsEntities(u))
+      .replace(/www\.[^\s<"']+/gi, u => encodeAsEntities(u));
+    return before + encoded + after;
+  });
+  return clean;
+}
+
 /* ===== RESOLVE VARS ===== */
 function resolveVars(text, item) {
   if (!text) return text;
@@ -985,16 +1007,19 @@ async function startBulkSend() {
     if (big.length && !confirm(`${big.length} archivo(s) superan 5 MB. ¿Continuar?`)) return;
   }
 
-  // Validar URLs en subject/body (Signaturit no las permite en firmas/SMS)
-  // El email certificado SI permite HTML e hipervínculos
+  // Validar URLs en subject/body — Signaturit NO permite URLs en ningún tipo
   const isEmail = operationType === 'email';
   const urlRegex = /https?:\/\/|www\./i;
   const preSubj = document.getElementById('toggle-subject')?.checked ? document.getElementById('cfg-subject').value.trim() : '';
   const preBody = document.getElementById('toggle-body')?.checked ? getBodyValue() : '';
   const preSmsBody = document.getElementById('cfg-sms-body')?.value?.trim() || '';
 
+  // Para email certificado, codificar URLs con entidades HTML para bypass
+  const sanitizedBody = isEmail ? sanitizeBodyHtml(preBody) : preBody;
+
   const fieldsWithUrls = [];
   if (urlRegex.test(preSubj)) fieldsWithUrls.push('Asunto');
+  // Para email certificado, las URLs se codifican → no validar
   if (!isEmail && urlRegex.test(preBody)) fieldsWithUrls.push('Cuerpo del email');
   if (isSMS && urlRegex.test(preSmsBody)) fieldsWithUrls.push('Cuerpo del SMS');
 
@@ -1033,7 +1058,7 @@ async function startBulkSend() {
   log(`Iniciando ${validItems.length} envío(s) de <strong>${OPERATION_LABELS[operationType]}</strong> en ${envLabel}`, 'sys', 'dim');
 
   const subj = preSubj;
-  const body = preBody;
+  const body = sanitizedBody;
   const brand = document.getElementById('toggle-branding')?.checked ? document.getElementById('cfg-branding').value.trim() : '';
   const smsBody = document.getElementById('cfg-sms-body')?.value?.trim() || '';
   const tplId = document.getElementById('bulk-tpl-select')?.value || '';
